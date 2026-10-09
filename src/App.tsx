@@ -95,6 +95,7 @@ export default function App() {
   const crackleRef = useRef(new Crackle());
   const haptics = useRef(new WebHaptics());
   const struckOnce = useRef(false);
+  const brokeOnce = useRef(false);
   const reduced = useRef(prefersReducedMotion());
   const rainDamp = useRef(0);
   const [rhDamp, setRhDamp] = useState(0);
@@ -131,11 +132,16 @@ export default function App() {
         r = { stage, sim, fx };
         readyRef.current = r;
       } else {
+        // data is here — clear the veil, let the table swallow the old hillside
+        setSwitching(null);
+        await r.stage.millOut();
+        if (seq !== loadSeq.current) return;
         r.stage.setTerrain(terr.field);
         r.sim.reset(terr.heightTexData, wx, placeSeed(p));
         r.stage.attachSim(r.sim);
         setBurntKm2(0);
         struckOnce.current = false;
+        brokeOnce.current = false;
       }
       placeRef.current = p;
       if (!p.name) p = { ...p, name: nameFor(p) };
@@ -251,27 +257,22 @@ export default function App() {
 
   // guide progression — a poll watches real gestures, so any order works
   useEffect(() => {
-    if (!ready || guideStep === "done" || guideStep === "wind") return;
+    if (!ready || guideStep === "done") return;
     const t = setInterval(() => {
       const r = readyRef.current;
       if (!r) return;
       const orbitDone = r.stage.orbitAccum > 0.5;
       const struckDone = struckOnce.current;
       if (guideStep === "orbit" && (orbitDone || struckDone)) {
-        setGuideStep(struckDone ? "wind" : "strike");
+        setGuideStep(struckDone ? "break" : "strike");
       } else if (guideStep === "strike" && struckDone) {
-        setGuideStep("wind");
+        setGuideStep("break");
+      } else if (guideStep === "break" && brokeOnce.current) {
+        finishGuide();
       }
     }, 400);
     return () => clearInterval(t);
   }, [ready, guideStep]);
-
-  useEffect(() => {
-    if (guideStep !== "wind") return;
-    const done = setTimeout(finishGuide, 6000);
-    return () => clearTimeout(done);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guideStep]);
 
   const finishGuide = () => {
     setGuideStep("done");
@@ -295,7 +296,9 @@ export default function App() {
     let lastRain = 0;
     let hoverAt = 0;
 
+    let pressPt: { x: number; y: number; type: string } | null = null;
     const down = (e: PointerEvent) => {
+      pressPt = { x: e.clientX, y: e.clientY, type: e.pointerType };
       const t = toolRef.current;
       if (t === "orbit") return;
       const p = gatePick ?? stage.pick(e.clientX, e.clientY);
@@ -367,22 +370,53 @@ export default function App() {
       e.stopImmediatePropagation();
     };
     const upEvt = (e: PointerEvent) => {
+      // touch has no hover — a tap on the relief whispers instead
+      if (!active && pressPt && e.pointerType === "touch" && toolRef.current === "orbit") {
+        const moved = Math.hypot(e.clientX - pressPt.x, e.clientY - pressPt.y);
+        pressPt = null;
+        if (moved < 9) {
+          const p = stage.pick(e.clientX, e.clientY);
+          if (p) {
+            const c = sim.cell(p.u, p.v);
+            if (c[0]! >= 1.5 && c[2]! > 0) {
+              const ago = Math.max(1, Math.round((sim.time - c[2]!) / 60));
+              setHoverTag({ x: e.clientX, y: e.clientY, text: `burned ${ago} min ago` });
+              setTimeout(() => setHoverTag(null), 2400);
+            } else if (c[0]! > 0.5) {
+              setHoverTag({ x: e.clientX, y: e.clientY, text: "burning" });
+              setTimeout(() => setHoverTag(null), 1600);
+            }
+          }
+        }
+        return;
+      }
+      pressPt = null;
       if (!active) return;
       active = false;
       if (toolRef.current === "match" && stroke.length) {
-        // a real match flares where the stroke ends — ignite only the tail
-        const tail = stroke.slice(-5);
-        sim.stamp(0, tail, 11);
+        // a dragged match drops a line of fire along the last stretch,
+        // then flares where the stroke ends
+        const tail = stroke.slice(-Math.max(5, Math.ceil(stroke.length / 3)));
+        sim.stamp(0, tail, 10);
         const last = tail[tail.length - 1]!;
         const wp = stage.worldAt(last.u, last.v);
         fx.strike(stroke.slice(-48), sim.wind);
         fx.flareAt(wp);
         stage.nudgeFocus(wp);
+        crackleRef.current.strike();
         haptics.current.trigger("nudge").catch(() => {});
         struckOnce.current = true;
+        // honest feedback when the strike found nothing to hold
+        setTimeout(() => {
+          if (readyRef.current?.sim === sim && sim.stats().burning < 0.0004) {
+            setNotice("bare rock — the sparks die out");
+            setTimeout(() => setNotice(null), 3200);
+          }
+        }, 1800);
       }
       if (toolRef.current === "break" && stroke.length) {
         sim.stamp(1, stroke, 10);
+        brokeOnce.current = true;
       }
       stroke = [];
       e.stopImmediatePropagation();
@@ -423,6 +457,7 @@ export default function App() {
               r.fx.flareAt(hit.point);
               r.stage.nudgeFocus(hit.point);
             }
+            crackleRef.current.strike();
             struckOnce.current = true;
             haptics.current.trigger("nudge").catch(() => {});
           } else if (t === "break") r.sim.stamp(1, [c], 14);
@@ -450,17 +485,30 @@ export default function App() {
     const next = !burnsOn;
     setBurnsOn(next);
     r.stage.hotspotShow = next;
-    if (next && !hotspots) {
-      // lazy: the satellite pass only runs when someone looks
-      const p = placeRef.current;
-      const pk = `${p.lat.toFixed(4)},${p.lon.toFixed(4)}`;
-      fetchHotspots(p)
-        .then((h) => {
-          burnsCache.current.set(pk, h.points);
-          setHotspots(h.points);
-          r.stage.setHotspots(h.points);
-        })
-        .catch(() => setHotspots([]));
+    if (next) {
+      // the satellites answer out loud — the one fact no demo can fake
+      const call = (n: number) => {
+        setNotice(
+          n > 0
+            ? `${n} real fire${n === 1 ? "" : "s"} detected near here — the last 4 days`
+            : "the satellites saw nothing burning near here — the last 4 days",
+        );
+        setTimeout(() => setNotice(null), 5200);
+      };
+      if (hotspots) call(hotspots.length);
+      else {
+        // lazy: the satellite pass only runs when someone looks
+        const p = placeRef.current;
+        const pk = `${p.lat.toFixed(4)},${p.lon.toFixed(4)}`;
+        fetchHotspots(p)
+          .then((h) => {
+            burnsCache.current.set(pk, h.points);
+            setHotspots(h.points);
+            r.stage.setHotspots(h.points);
+            call(h.points.length);
+          })
+          .catch(() => setHotspots([]));
+      }
     }
   };
 
@@ -507,10 +555,6 @@ export default function App() {
       {ready && place && weather && (
         <>
           <header className="masthead">
-            <div className="brand">
-              <div className="name">yesca</div>
-              <div className="tag">a wildfire observatory</div>
-            </div>
             <button
               className="place-btn"
               onClick={() => setPlacesOpen((o) => !o)}
@@ -519,13 +563,13 @@ export default function App() {
             >
               <TextMorph>{place.name ?? "somewhere real"}</TextMorph>
               <small>
-                {place.lat.toFixed(4)}°, {place.lon.toFixed(4)}°{" "}
-                <span className="caret">▾</span>
+                tonight's wind, live
+                <span className="caret"> ▾</span>
               </small>
             </button>
           </header>
 
-          <div className="instruments">
+          <div className={`instruments ${guideStep !== "done" ? "dim" : ""}`}>
             <div className="inst vane-inst">
               <div className="vane" aria-hidden>
                 <span className="n">N</span>
@@ -586,35 +630,25 @@ export default function App() {
               <span className="lbl">crackle</span>
               <i className="sw" />
             </button>
-            <button
-              className="lever"
-              onClick={() => setShareOpen(true)}
-              title="render this hillside as a card"
-            >
-              <span className="lbl">share</span>
-              <i className="sw arrow" />
-            </button>
-            <button
-              className="lever"
-              onClick={() => {
-                setGuideStep("orbit");
-                localStorage.removeItem(GUIDE_KEY);
-              }}
-              title="replay the first-run guide"
-            >
-              <span className="lbl">guide</span>
-              <i className="sw q">?</i>
-            </button>
-            <div className="note">
-              a model, not a forecast
-              <br />
-              terrain: mapzen terrarium · wind: open-meteo
-              <br />
-              burns: nasa firms
-            </div>
           </div>
 
+          {burntKm2 > 0.004 && !shareOpen && (
+            <button
+              className="sharechip"
+              onClick={() => {
+                setShareOpen(true);
+                haptics.current.trigger("nudge").catch(() => {});
+              }}
+            >
+              press the hillside into a card ↗
+            </button>
+          )}
+
           <nav className="tray" aria-label="tools">
+            <div className="dock-brand" aria-hidden>
+              <em>yesca</em>
+              <span>a wildfire observatory</span>
+            </div>
             {(Object.keys(TOOL_LABEL) as Tool[]).map((t) => (
               <button
                 key={t}
@@ -660,8 +694,15 @@ export default function App() {
           <PlaceTray
             open={placesOpen}
             onClose={() => setPlacesOpen(false)}
+            place={place}
+            onGuide={() => {
+              setPlacesOpen(false);
+              setGuideStep("orbit");
+              localStorage.removeItem(GUIDE_KEY);
+            }}
             onPick={(p) => {
               setPlacesOpen(false);
+              haptics.current.trigger("nudge").catch(() => {});
               loadPlace(p, false);
             }}
           />

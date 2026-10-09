@@ -62,7 +62,7 @@ await page.waitForTimeout(600);
 const g1 = await page.evaluate(() => document.querySelector(".g-line")?.textContent);
 await page.click(".g-skip");
 await page.waitForTimeout(400);
-const g2 = await page.evaluate(() => document.querySelector(".g-card") ? "still there" : "gone");
+const g2 = await page.evaluate(() => document.querySelector(".guide") ? "still there" : "gone");
 console.log("guide replay:", g1, "| after skip:", g2);
 
 // offline banner

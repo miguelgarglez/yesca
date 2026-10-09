@@ -222,6 +222,16 @@ export class Stage {
     );
   }
 
+  /** the table swallows the old hillside; resolves when it is clear to rebuild */
+  millOut(): Promise<void> {
+    return new Promise((res) => {
+      this.sinking = true;
+      this.sinkResolve = res;
+    });
+  }
+  private sinking = false;
+  private sinkResolve: (() => void) | null = null;
+
   /** swap in a new place: rebuild terrain, reset rig */
   setTerrain(terrain: TerrainField) {
     this.terrain = terrain;
@@ -380,8 +390,8 @@ export class Stage {
       this.sceneMeters * 1.9,
     );
     this.vRadius *= Math.pow(0.02, dt);
-    // idle drift after 14s
-    if (this.idleDrift && performance.now() - this.lastInput > 14000) this.theta += dt * 0.02;
+    // idle drift — a living scene breathes after a few seconds, not fourteen
+    if (this.idleDrift && performance.now() - this.lastInput > 5000) this.theta += dt * 0.024;
 
     if (this.focusT > 0) this.focusT = Math.max(0, this.focusT - dt * 0.45);
     this.effTarget.copy(this.target);
@@ -398,8 +408,16 @@ export class Stage {
     );
     this.camera.lookAt(this.effTarget);
 
-    // milling reveal
-    if (this.revealT < 1) {
+    // milling reveal — and its inverse when a new place is coming
+    if (this.sinking) {
+      this.revealT = Math.max(0, this.revealT - dt / 0.55);
+      this.terrainMat.uniforms.uReveal!.value = this.revealT * this.revealT;
+      if (this.revealT <= 0) {
+        this.sinking = false;
+        this.sinkResolve?.();
+        this.sinkResolve = null;
+      }
+    } else if (this.revealT < 1) {
       this.revealT = Math.min(1, this.revealT + dt / this.revealSpeed);
       const e = 1 - Math.pow(1 - this.revealT, 3);
       this.terrainMat.uniforms.uReveal!.value = e;

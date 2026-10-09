@@ -234,18 +234,29 @@ void main() {
   float cut = (1.0 - smoothstep(0.05, 0.25, fu.r)) * step(0.5, fu.g);
   col = mix(col, uChar * 0.55, cut * 0.85);
 
-  // match scratch: a pale line scored into the land
+  // match scratch: a dark groove scored into the land, glinting like struck flint
   float scratch = clamp(fu.b, 0.0, 1.0);
-  col = mix(col, vec3(0.95, 0.88, 0.7), scratch * 0.45);
+  vec3 ground = mix(col, uChar * 0.6, scratch * 0.62);
+  ground += uEmber * scratch * vnoise(vUv * 900.0 + uTime * 2.2) * 0.22;
+  col = ground;
 
-  // burn states
+  // burn states — feathered rim via neighbourhood taps, not a sawtooth edge
+  float nb = 0.0;
+  nb += step(1.5, texture(uState, fuv + vec2(uTexel.x * 2.5, 0.0)).r);
+  nb += step(1.5, texture(uState, fuv - vec2(uTexel.x * 2.5, 0.0)).r);
+  nb += step(1.5, texture(uState, fuv + vec2(0.0, uTexel.y * 2.5)).r);
+  nb += step(1.5, texture(uState, fuv - vec2(0.0, uTexel.y * 2.5)).r);
   if (st.r > 1.5) {
     // burnt: char with ash mottling, cooling embers
     float mot = vnoise(vUv * 640.0 + h * 40.0);
     vec3 c = mix(uChar, uAsh, smoothstep(0.45, 0.8, mot) * 0.35);
-    col = c * (0.25 + 0.45 * dif);
+    vec3 burnCol = c * (0.25 + 0.45 * dif);
+    float mask = smoothstep(0.1, 0.9, (nb + 1.0) / 5.0);
+    col = mix(col, burnCol, mask);
+    // fresh char radiates along the rim for a few sim-seconds
+    float age = uTime - st.b;
     float ember = st.g * (0.6 + 0.4 * sin(uTime * 7.0 + vUv.x * 900.0 + vUv.y * 731.0));
-    col += uEmber * ember * 0.6;
+    col += uEmber * (ember * 0.6 + exp(-max(age, 0.0) * 0.7) * 0.55 * mask);
   } else if (st.r > 0.5) {
     // burning: dim ember body, incandescent only where intensity peaks
     float i = st.g * (0.7 + 0.6 * vnoise(vUv * 110.0 + uTime * 0.4));
@@ -269,6 +280,11 @@ void main() {
 
   // wet sheen
   col = mix(col, col * vec3(0.82, 0.9, 1.06), clamp(fu.g - 0.45, 0.0, 1.0) * 0.7);
+
+  // slow cloud shadows crossing the slope — the light itself is alive
+  float cloud = vnoise(vUv * 2.4 + vec2(uTime * 0.016, uTime * 0.011))
+              + 0.5 * vnoise(vUv * 5.1 + vec2(-uTime * 0.022, uTime * 0.014));
+  col *= 0.86 + 0.14 * smoothstep(0.1, 0.9, cloud * 0.66);
 
   // table edge fade
   float edge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
@@ -308,8 +324,8 @@ void main() {
   vec2 wuv = fuv + vec2(vnoise(vUv * 9.0 + uTime * 0.05), vnoise(vUv * 9.0 - uTime * 0.04)) * 0.02;
   float d = texture(uSmoke, wuv).r;
   float shred = vnoise(vUv * 46.0 + vec2(uTime * 0.11, -uTime * 0.07));
-  float a = smoothstep(0.04, 0.65, d) * (0.5 + 0.5 * shred);
-  frag = vec4(uSmokeCol, a * 0.5);
+  float a = smoothstep(0.04, 0.6, d) * (0.5 + 0.5 * shred);
+  frag = vec4(uSmokeCol, a * 0.72);
 }
 `;
 
@@ -425,7 +441,7 @@ void main() {
   // hide by moving off the frustum — never multiply position by the fade
   gl_Position = uShow > 0.003 ? projectionMatrix * mv : vec4(2.0, 2.0, 2.0, 1.0);
   float pulse = 1.0 + 0.3 * sin(uTime * 2.4 + vPhase);
-  gl_PointSize = uShow * 15.0 * pulse * uPixelScale / max(1.0, -mv.z / 900.0);
+  gl_PointSize = uShow * 19.0 * pulse * uPixelScale / max(1.0, -mv.z / 900.0);
 }
 `;
 

@@ -87,11 +87,11 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture }:
                 setTimeout(() => setCopied(false), 1600);
               }}
             >
-              {copied ? "link in hand" : "copy link"}
+              {copied ? "word sent" : "send word"}
             </button>
             {img && (
               <a href={img} download={`yesca-${place.name?.replace(/\W+/g, "-").toLowerCase() ?? "hillside"}.png`}>
-                save the card
+                keep the burn
               </a>
             )}
           </div>

@@ -44,7 +44,7 @@ await page.screenshot({ path: "/tmp/y-m3-burn.png" });
 const stats = await page.evaluate(() => window.__yesca.stats());
 console.log("stats", JSON.stringify(stats));
 
-// guide should be done or on wind step
+// guide should be done or on break step
 await page.waitForTimeout(5000);
 await page.screenshot({ path: "/tmp/y-m3-after.png" });
 

@@ -6,6 +6,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onPick: (place: Place) => void;
+  place: Place | null;
+  onGuide: () => void;
 }
 
 interface NomResult {
@@ -15,7 +17,7 @@ interface NomResult {
 }
 
 /** the place sheet: gazetteer + live search, grows from the masthead place */
-export function PlaceTray({ open, onClose, onPick }: Props) {
+export function PlaceTray({ open, onClose, onPick, place, onGuide }: Props) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<NomResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -94,6 +96,11 @@ export function PlaceTray({ open, onClose, onPick }: Props) {
           aria-label="search places"
           spellCheck={false}
         />
+        {place && (
+          <div className="pt-coords">
+            {place.lat.toFixed(4)}°, {place.lon.toFixed(4)}°
+          </div>
+        )}
       </div>
       {searching && <div className="pt-note">listening for a name…</div>}
       {failed && !searching && (
@@ -122,6 +129,12 @@ export function PlaceTray({ open, onClose, onPick }: Props) {
             <span className="pt-hint">{g.hint}</span>
           </button>
         ))}
+      </div>
+      <div className="pt-foot">
+        <button className="pt-guide" onClick={onGuide}>walk me through it</button>
+        <span className="pt-cred">
+          a model, not a forecast — terrain: mapzen terrarium · wind: open-meteo · burns: nasa firms
+        </span>
       </div>
     </div>
   );

@@ -75,6 +75,32 @@ export class Crackle {
     }
   }
 
+  /** the flint: a short bright scrape when a strike lands */
+  strike() {
+    const ctx = this.ctx;
+    if (!ctx || !this.gain) return;
+    const t = ctx.currentTime;
+    const len = Math.floor(ctx.sampleRate * 0.28);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      const p = i / len;
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - p, 1.6) * (0.4 + 0.6 * Math.sin(p * 40));
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 3400;
+    bp.Q.value = 1.4;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    src.connect(bp).connect(g).connect(ctx.destination);
+    src.start(t);
+    src.stop(t + 0.3);
+  }
+
   private pop() {
     const ctx = this.ctx!;
     const osc = ctx.createOscillator();

@@ -99,22 +99,19 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
 
 .masthead {
   position: fixed; top: 0; left: 0; right: 0;
-  display: flex; justify-content: space-between; align-items: flex-start;
+  display: flex; justify-content: flex-end; align-items: flex-start;
   padding: 18px 22px;
   pointer-events: none;
   z-index: 20;
+  animation: hud-in 700ms var(--ease-out) 150ms both;
 }
-.brand .name {
-  font-family: "Spectral", serif; font-style: italic; font-weight: 300;
-  font-size: 22px; color: var(--bone);
-}
-.brand .tag {
-  font-family: "IBM Plex Mono", monospace; font-size: 10px;
-  letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.55;
+@keyframes hud-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 .place-btn {
   pointer-events: auto;
-  font-family: "IBM Plex Mono", monospace; font-size: 11px;
+  font-family: "IBM Plex Mono", monospace; font-size: 12px;
   letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.9;
   text-align: right; color: var(--bone);
   background: none; border: none; cursor: pointer; padding: 4px 0 4px 12px;
@@ -133,17 +130,32 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   font-family: "IBM Plex Mono", monospace;
   pointer-events: none;
   z-index: 15;
+  animation: hud-in 700ms var(--ease-out) 500ms both;
 }
 .inst .v {
   font-size: 17px; font-weight: 400; color: var(--bone);
   font-variant-numeric: tabular-nums;
 }
 .inst .k {
-  font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
   opacity: 0.5; margin-bottom: 4px;
 }
-.inst .v small { font-size: 10px; opacity: 0.6; }
+.inst .v small { font-size: 11px; opacity: 0.6; }
 .inst.burnt .v { color: var(--ember); }
+
+/* the contextual share chip — it only surfaces once there is a scar to press */
+.sharechip {
+  position: fixed; left: 22px; bottom: 84px; z-index: 16;
+  font-family: "Spectral", serif; font-style: italic; font-size: 13px;
+  color: var(--hot); background: rgba(255, 90, 31, 0.12);
+  border: 1px solid rgba(255, 90, 31, 0.4);
+  border-radius: 999px; padding: 7px 15px; cursor: pointer;
+  backdrop-filter: blur(10px);
+  animation: chip-in 420ms var(--ease-spring) both;
+  transition: background 200ms var(--ease-out), transform 160ms var(--ease-out);
+}
+.sharechip:hover { background: rgba(255, 90, 31, 0.2); transform: translateY(-1px); }
+.sharechip:focus-visible { outline: 1px solid var(--amber); outline-offset: 3px; }
 
 .vane {
   width: 44px; height: 44px; position: relative;
@@ -156,7 +168,7 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   transition: transform 900ms var(--ease-spring);
 }
 .vane .n { position: absolute; top: 3px; left: 50%; transform: translateX(-50%);
-  font-size: 7px; letter-spacing: 0.1em; opacity: 0.55; }
+  font-size: 8px; letter-spacing: 0.1em; opacity: 0.55; }
 .vane::after {
   content: ""; position: absolute; left: 50%; top: 50%;
   width: 3px; height: 3px; border-radius: 50%;
@@ -170,12 +182,13 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   display: flex; flex-direction: column; align-items: flex-end; gap: 7px;
   font-family: "IBM Plex Mono", monospace;
   z-index: 15;
+  animation: hud-in 700ms var(--ease-out) 650ms both;
 }
 .lever {
   display: flex; align-items: center; gap: 9px;
   background: none; border: none; cursor: pointer;
   color: var(--bone); padding: 3px 0;
-  font-family: inherit; font-size: 9px;
+  font-family: inherit; font-size: 10px;
   letter-spacing: 0.16em; text-transform: uppercase;
   opacity: 0.62;
   transition: opacity 180ms var(--ease-out);
@@ -209,26 +222,41 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
 }
 .lever .sw.q { font-size: 12px; color: rgba(233,225,206,0.7); }
 
-.note {
-  font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
-  opacity: 0.38; text-align: right; pointer-events: none;
-  margin-top: 4px; line-height: 1.7;
-}
-
 /* ---------- tool dock ---------- */
 
 .tray {
   position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 4px; padding: 6px 10px 6px 6px;
+  display: flex; align-items: center; gap: 4px; padding: 6px 12px 6px 14px;
   background: rgba(13, 12, 10, 0.72);
   border: 1px solid rgba(233, 225, 206, 0.1);
   border-radius: 999px;
   backdrop-filter: blur(14px);
   pointer-events: auto;
   z-index: 15;
+  animation: hud-in-c 700ms var(--ease-out) 300ms both;
+}
+@keyframes hud-in-c {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to { opacity: 1; transform: translateX(-50%); }
+}
+/* the brand lives on the instrument's faceplate — nowhere else */
+.dock-brand {
+  display: flex; flex-direction: column; align-items: flex-start;
+  padding-right: 12px; margin-right: 8px;
+  border-right: 1px solid rgba(233, 225, 206, 0.14);
+  pointer-events: none;
+}
+.dock-brand em {
+  font-family: "Spectral", serif; font-style: italic; font-weight: 300;
+  font-size: 17px; color: var(--bone); line-height: 1.1;
+}
+.dock-brand span {
+  font-family: "IBM Plex Mono", monospace; font-size: 7.5px;
+  letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.5;
+  white-space: nowrap;
 }
 .tbtn {
-  width: 34px; height: 34px; border-radius: 50%;
+  width: 40px; height: 40px; border-radius: 50%;
   display: grid; place-items: center;
   color: var(--bone); background: transparent;
   border: 1px solid transparent; cursor: pointer;
@@ -236,7 +264,7 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   transition: opacity 160ms var(--ease-out), background 160ms var(--ease-out),
     border-color 160ms var(--ease-out), transform 160ms var(--ease-out), color 160ms var(--ease-out);
 }
-.tbtn svg { width: 15px; height: 15px; }
+.tbtn svg { width: 17px; height: 17px; }
 .tbtn:hover { opacity: 1; background: rgba(233,225,206,0.07); }
 .tbtn:active { transform: scale(0.92); }
 .tbtn.on {
@@ -246,53 +274,43 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
 }
 .tbtn:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
 .toolname {
-  font-family: "IBM Plex Mono", monospace; font-size: 9px;
+  font-family: "IBM Plex Mono", monospace; font-size: 10px;
   letter-spacing: 0.16em; text-transform: uppercase;
   color: var(--amber); opacity: 0.85;
-  min-width: 58px; text-align: left; padding-left: 6px;
+  min-width: 58px; text-align: left; padding-left: 8px;
   border-left: 1px solid rgba(233,225,206,0.12);
   margin-left: 4px;
 }
 
-/* ---------- guide ---------- */
+/* ---------- guide: a strip engraved on the dock's top edge ---------- */
 
-.guide { position: fixed; z-index: 30; pointer-events: none; }
-.guide-center { left: 50%; bottom: 96px; transform: translateX(-50%); }
-.guide-vane { left: 22px; bottom: 88px; }
-.g-card {
-  background: rgba(13, 12, 10, 0.82);
-  border: 1px solid rgba(232, 181, 99, 0.25);
-  border-radius: 14px;
-  backdrop-filter: blur(14px);
-  padding: 14px 18px 12px;
-  max-width: 270px;
-  pointer-events: auto;
-  animation: guide-in 500ms var(--ease-spring) both;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.45);
+.guide {
+  position: fixed; left: 50%; bottom: 82px; transform: translateX(-50%);
+  z-index: 30; pointer-events: auto;
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 9px 16px;
+  background: rgba(13, 12, 10, 0.68);
+  border: 1px solid rgba(232, 181, 99, 0.18);
+  border-radius: 999px;
+  backdrop-filter: blur(12px);
+  animation: guide-in 420ms var(--ease-spring) both;
+  white-space: nowrap;
+  max-width: min(92vw, 520px);
 }
 @keyframes guide-in {
-  from { opacity: 0; transform: translateY(10px) scale(0.97); }
-  to { opacity: 1; transform: none; }
-}
-.guide-vane .g-card { animation-name: guide-in-l; }
-@keyframes guide-in-l {
-  from { opacity: 0; transform: translateX(-10px) scale(0.97); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translateX(-50%) translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: translateX(-50%); }
 }
 .g-k {
-  font-family: "IBM Plex Mono", monospace; font-size: 9px;
+  font-family: "IBM Plex Mono", monospace; font-size: 10px;
   letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--amber); opacity: 0.9; margin-bottom: 7px;
+  color: var(--amber); opacity: 0.9;
 }
 .g-line {
   font-family: "Spectral", serif; font-style: italic; font-weight: 300;
-  font-size: 17px; line-height: 1.45; color: var(--bone);
+  font-size: 15px; line-height: 1.4; color: var(--bone);
 }
-.g-foot {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-top: 10px;
-}
-.g-dots { display: flex; gap: 5px; }
+.g-dots { display: inline-flex; gap: 5px; align-self: center; }
 .g-dots i {
   width: 4px; height: 4px; border-radius: 50%;
   background: rgba(233,225,206,0.22);
@@ -300,12 +318,11 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
 .g-dots i.on { background: var(--ember); }
 .g-skip {
   background: none; border: none; cursor: pointer;
-  font-family: "IBM Plex Mono", monospace; font-size: 9px;
-  letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--bone); opacity: 0.45; padding: 2px 0;
-  border-bottom: 1px solid transparent;
+  font-size: 14px; line-height: 1;
+  color: var(--bone); opacity: 0.4; padding: 2px 4px;
+  transition: opacity 160ms var(--ease-out);
 }
-.g-skip:hover { opacity: 0.9; border-color: rgba(233,225,206,0.4); }
+.g-skip:hover { opacity: 0.9; }
 .g-skip:focus-visible { outline: 1px solid var(--amber); outline-offset: 3px; }
 
 /* ---------- hover whisper ---------- */
@@ -375,7 +392,7 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
 }
 .pt-list { overflow-y: auto; padding: 4px 6px 8px; }
 .pt-sect {
-  font-family: "IBM Plex Mono", monospace; font-size: 8px;
+  font-family: "IBM Plex Mono", monospace; font-size: 10px;
   letter-spacing: 0.2em; text-transform: uppercase;
   opacity: 0.4; padding: 8px 8px 5px;
 }
@@ -384,21 +401,43 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   gap: 10px;
   background: none; border: none; border-radius: 9px;
   padding: 7px 8px; cursor: pointer; text-align: left;
-  transition: background 140ms var(--ease-out);
+  transition: background 140ms var(--ease-out), transform 100ms var(--ease-out);
 }
 .pt-list button:hover { background: rgba(233,225,206,0.06); }
+.pt-list button:active { background: rgba(255,90,31,0.12); transform: scale(0.99); }
 .pt-list button:focus-visible { outline: 1px solid var(--amber); outline-offset: -1px; }
 .pt-name {
   font-family: "Spectral", serif; font-style: italic; font-size: 14px;
   color: var(--bone); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pt-hint {
-  font-family: "IBM Plex Mono", monospace; font-size: 8px;
+  font-family: "IBM Plex Mono", monospace; font-size: 10px;
   letter-spacing: 0.1em; text-transform: uppercase;
   opacity: 0.4; white-space: nowrap;
 }
 .pt-list::-webkit-scrollbar { width: 4px; }
 .pt-list::-webkit-scrollbar-thumb { background: rgba(233,225,206,0.15); border-radius: 2px; }
+.pt-coords {
+  font-family: "IBM Plex Mono", monospace; font-size: 10px;
+  letter-spacing: 0.12em; opacity: 0.45; padding: 4px 2px 0;
+}
+.pt-foot {
+  border-top: 1px solid rgba(233,225,206,0.08);
+  padding: 9px 14px 10px;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.pt-guide {
+  background: none; border: none; cursor: pointer; text-align: left;
+  font-family: "Spectral", serif; font-style: italic; font-size: 13px;
+  color: var(--amber); padding: 0; align-self: flex-start;
+  border-bottom: 1px solid rgba(232,181,99,0.35);
+}
+.pt-guide:hover { color: var(--hot); border-color: var(--hot); }
+.pt-guide:focus-visible { outline: 1px solid var(--amber); outline-offset: 3px; }
+.pt-cred {
+  font-family: "IBM Plex Mono", monospace; font-size: 9.5px;
+  letter-spacing: 0.06em; opacity: 0.38; line-height: 1.6;
+}
 
 /* ---------- share sheet ---------- */
 
@@ -415,6 +454,7 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   border-radius: 18px;
   padding: 14px;
   max-width: min(92vw, 720px);
+  transform-origin: 14% 96%; /* grows from the share chip's corner */
   animation: sheet-in 380ms var(--ease-spring) both;
   box-shadow: 0 20px 80px rgba(0,0,0,0.6);
 }
@@ -450,12 +490,12 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
 
 @media (max-width: 700px) {
   .masthead { padding: 14px 16px; }
-  .brand .name { font-size: 19px; }
-  .brand .tag { font-size: 8px; }
-  .place-btn { font-size: 10px; }
+  .place-btn { font-size: 11px; }
   .instruments {
-    left: 16px; bottom: 84px; gap: 12px;
+    left: 16px; bottom: 96px; gap: 12px;
   }
+  /* while the guide is teaching, the instruments step back */
+  .instruments.dim { opacity: 0; transition: opacity 300ms var(--ease-out); }
   .inst .v { font-size: 14px; }
   .inst.burnt, .inst:nth-child(4) { display: none; }
   .vane { width: 36px; height: 36px; }
@@ -463,19 +503,21 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   .rail {
     right: 16px; bottom: auto; top: 60px; gap: 6px;
   }
-  .rail .note { display: none; }
-  .tray { bottom: 14px; }
-  .guide-center { bottom: 150px; }
-  .guide-vane { bottom: 140px; left: 16px; }
+  .sharechip { left: 16px; bottom: 150px; }
+  .tray { bottom: 14px; padding: 6px 10px 6px 12px; }
+  .dock-brand span { display: none; }
+  .tbtn { width: 44px; height: 44px; }
+  .toolname { display: none; }
+  .guide { bottom: 78px; white-space: normal; max-width: 88vw; }
   .placetray { top: 56px; right: 16px; left: 16px; width: auto; }
-  .hoverchip { display: none; }
 }
 
 /* ---------- reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .g-card, .placetray, .sheet, .sheet-back, .offline, .hoverchip, .loading .bar i {
-    animation-duration: 1ms;
+  .guide, .placetray, .sheet, .sheet-back, .offline, .hoverchip, .loading .bar i,
+  .sharechip, .masthead, .instruments, .rail, .tray {
+    animation-duration: 1ms; animation-delay: 0ms;
   }
   .vane .needle { transition-duration: 200ms; }
 }

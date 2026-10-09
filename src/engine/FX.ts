@@ -183,9 +183,8 @@ export class FX {
     this.flare.visible = true;
   }
 
-  /** while scratching: tiny sputter sparks at the match head */
+  /** while scratching: the match head leaves a continuous cinder trail */
   sputter(u: number, v: number) {
-    if (Math.random() > 0.35 * this.density) return;
     this.strike([{ u, v }], { x: 0, y: 0 });
   }
 
@@ -234,7 +233,8 @@ export class FX {
       this.flareT = Math.min(1, this.flareT + dt / 0.55);
       const s = this.stage.sceneMeters * 0.02 * (0.4 + this.flareT * 2.2);
       this.flare.scale.set(s, s, 1);
-      this.flareMat.opacity = (1 - this.flareT) * 0.9;
+      // a hard white core for the first ~70ms, then the amber bloom
+      this.flareMat.opacity = this.flareT < 0.13 ? 1.0 : (1 - this.flareT) * 0.9;
       if (this.flareT >= 1) this.flare.visible = false;
     }
   }
