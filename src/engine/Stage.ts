@@ -76,6 +76,8 @@ export class Stage {
   lastInput = 0;
   revealT = 0;
   revealSpeed = 1.8;
+  onRevealed?: () => void;
+  private revealedFired = false;
   idleDrift = true;
   terrain: TerrainField;
 
@@ -259,6 +261,7 @@ export class Stage {
     this.focusT = 0;
     this.revealT = 0;
     this.terrainMat.uniforms.uReveal!.value = 0;
+    this.revealedFired = false;
     this.setHotspots([]);
   }
 
@@ -424,6 +427,10 @@ export class Stage {
       this.revealT = Math.min(1, this.revealT + dt / this.revealSpeed);
       const e = 1 - Math.pow(1 - this.revealT, 3);
       this.terrainMat.uniforms.uReveal!.value = e;
+      if (!this.revealedFired && e > 0.5) {
+        this.revealedFired = true;
+        this.onRevealed?.();
+      }
     }
 
     this.terrainMat.uniforms.uState!.value = sim.dynA.texture;

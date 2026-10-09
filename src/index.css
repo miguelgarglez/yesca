@@ -103,8 +103,16 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   padding: 18px 22px;
   pointer-events: none;
   z-index: 20;
-  animation: hud-in 700ms var(--ease-out) 150ms backwards;
 }
+/* no chrome before world: HUD waits for the milling front to light the relief */
+body:not(.revealed) .masthead,
+body:not(.revealed) .instruments,
+body:not(.revealed) .rail,
+body:not(.revealed) .tray { opacity: 0; visibility: hidden; }
+body.revealed .masthead { animation: hud-in 700ms var(--ease-out) 150ms backwards; }
+body.revealed .instruments { animation: hud-in 700ms var(--ease-out) 500ms backwards; }
+body.revealed .rail { animation: hud-in 700ms var(--ease-out) 650ms backwards; }
+body.revealed .tray { animation: hud-in-c 700ms var(--ease-out) 300ms backwards; }
 @keyframes hud-in {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
@@ -130,7 +138,6 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   font-family: "IBM Plex Mono", monospace;
   pointer-events: none;
   z-index: 15;
-  animation: hud-in 700ms var(--ease-out) 500ms backwards;
   transition: opacity 300ms var(--ease-out);
 }
 .inst .v {
@@ -184,8 +191,10 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   display: flex; flex-direction: row; align-items: center; gap: 16px;
   font-family: "IBM Plex Mono", monospace;
   z-index: 15;
-  animation: hud-in 700ms var(--ease-out) 650ms backwards;
+  transition: opacity 300ms var(--ease-out);
 }
+/* the tour owns the lower-left corner while it teaches */
+.rail.dim, .instruments.dim { opacity: 0; pointer-events: none; }
 .lever {
   display: flex; align-items: center; gap: 9px;
   background: none; border: none; cursor: pointer;
@@ -235,7 +244,6 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   backdrop-filter: blur(14px);
   pointer-events: auto;
   z-index: 15;
-  animation: hud-in-c 700ms var(--ease-out) 300ms backwards;
 }
 @keyframes hud-in-c {
   from { opacity: 0; transform: translateX(-50%) translateY(6px); }
@@ -277,6 +285,7 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
 .tbtn:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
 /* tool switch answer: a name the dock says once, then drops */
 .toolflash {
+  /* left is set inline to the pressed button's center — the word rises from its tool */
   position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%);
   z-index: 25; pointer-events: none;
   font-family: "IBM Plex Mono", monospace; font-size: 10px;
@@ -516,8 +525,6 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   .instruments {
     left: 16px; bottom: 96px; gap: 12px;
   }
-  /* while the guide is teaching, the instruments step back */
-  .instruments.dim { opacity: 0; transition: opacity 300ms var(--ease-out); }
   .inst .v { font-size: 14px; }
   .inst.burnt, .inst:nth-child(4) { display: none; }
   .vane { width: 36px; height: 36px; }
@@ -529,7 +536,7 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   .tray { bottom: 14px; padding: 6px 10px 6px 12px; }
   .dock-brand span { display: none; }
   .tbtn { width: 44px; height: 44px; }
-  .guide { bottom: 84px; max-width: 88vw; gap: 10px; }
+  .guide { bottom: 100px; max-width: 88vw; gap: 10px; }
   /* the dots carry the step count; the kicker is what pushed the row wide */
   .guide .g-k { display: none; }
   .g-line { overflow: hidden; text-overflow: ellipsis; }

@@ -44,8 +44,14 @@ await page.screenshot({ path: "/tmp/y-m3-burn.png" });
 const stats = await page.evaluate(() => window.__yesca.stats());
 console.log("stats", JSON.stringify(stats));
 
-// guide should be done or on break step
-await page.waitForTimeout(5000);
+// step 3: cut a firebreak — the tour ends only on the real gesture
+await page.keyboard.press("3");
+await page.waitForTimeout(300);
+await page.mouse.move(760, 300);
+await page.mouse.down();
+for (let i = 1; i <= 10; i++) { await page.mouse.move(760, 300 + i * 16, { steps: 2 }); await page.waitForTimeout(40); }
+await page.mouse.up();
+await page.waitForFunction(() => !document.querySelector(".guide"), { timeout: 8000 });
 await page.screenshot({ path: "/tmp/y-m3-after.png" });
 
 // real burns toggle

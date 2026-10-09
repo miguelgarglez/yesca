@@ -77,11 +77,11 @@ export default function App() {
   const [tool, setTool] = useState<Tool>("match");
   const toolRef = useRef<Tool>("match");
   toolRef.current = tool;
-  const [toolFlash, setToolFlash] = useState(false);
-  const flashTool = () => setToolFlash(true);
+  const [toolFlash, setToolFlash] = useState<{ n: number; x: number } | null>(null);
+  const flashTool = (x = innerWidth / 2) => setToolFlash({ n: Date.now(), x });
   useEffect(() => {
     if (!toolFlash) return;
-    const t = setTimeout(() => setToolFlash(false), 1300);
+    const t = setTimeout(() => setToolFlash(null), 1300);
     return () => clearTimeout(t);
   }, [toolFlash]);
   const [guideStep, setGuideStep] = useState<GuideStep>(
@@ -130,6 +130,8 @@ export default function App() {
           return;
         }
         const stage = new Stage(canvasRef.current!, terr.field);
+        // the chrome waits for the world — instruments rise only once the land exists
+        stage.onRevealed = () => document.body.classList.add("revealed");
         const linear = !!g.getExtension("OES_texture_float_linear");
         const sim = new Sim(stage.renderer, terr.heightTexData, wx, placeSeed(p), linear);
         stage.attachSim(sim);
@@ -483,7 +485,11 @@ export default function App() {
       if (sheetsOpen) return;
       const map: Record<string, Tool> = { "1": "orbit", "2": "match", "3": "break", "4": "rain", o: "orbit", m: "match", b: "break", r: "rain" };
       const t = map[e.key];
-      if (t) { setTool(t); flashTool(); }
+      if (t) {
+        setTool(t);
+        const b = document.querySelector(`[data-tool="${t}"]`)?.getBoundingClientRect();
+        flashTool(b ? b.left + b.width / 2 : innerWidth / 2);
+      }
       if (e.key === "?") {
         setGuideStep("orbit");
         localStorage.removeItem(GUIDE_KEY);
@@ -499,6 +505,7 @@ export default function App() {
     const next = !burnsOn;
     setBurnsOn(next);
     r.stage.hotspotShow = next;
+    haptics.current.trigger("nudge").catch(() => {});
     if (next) {
       // the satellites answer out loud — the one fact no demo can fake
       const call = (n: number) => {
@@ -529,6 +536,7 @@ export default function App() {
   const toggleSound = () => {
     const next = !soundOn;
     setSoundOn(next);
+    haptics.current.trigger("nudge").catch(() => {});
     const c = crackleRef.current;
     if (next) c.start();
     else c.stop();
@@ -623,7 +631,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="rail">
+          <div className={`rail ${guideStep !== "done" ? "dim" : ""}`}>
             <button
               className={`lever ${burnsOn ? "on" : ""}`}
               onClick={toggleBurns}
@@ -646,7 +654,7 @@ export default function App() {
             </button>
           </div>
 
-          {burntKm2 > 0.004 && !shareOpen && (
+          {burntKm2 > 0.004 && !shareOpen && guideStep === "done" && (
             <button
               className="sharechip"
               onClick={(e) => {
@@ -670,7 +678,12 @@ export default function App() {
                 key={t}
                 data-tool={t}
                 className={`tbtn ${tool === t ? "on" : ""}`}
-                onClick={() => { setTool(t); flashTool(); }}
+                onClick={(e) => {
+                  setTool(t);
+                  const b = e.currentTarget.getBoundingClientRect();
+                  flashTool(b.left + b.width / 2);
+                  haptics.current.trigger("nudge").catch(() => {});
+                }}
                 aria-pressed={tool === t}
                 title={`${TOOL_LABEL[t]} (${t === "orbit" ? "1" : t === "match" ? "2" : t === "break" ? "3" : "4"})`}
               >
@@ -678,9 +691,9 @@ export default function App() {
               </button>
             ))}
           </nav>
-          {/* the tool's name answers the switch, then gets out of the way */}
+          {/* the tool's name answers the switch from the button that asked, then drops */}
           {toolFlash && (
-            <div className="toolflash" aria-hidden>
+            <div key={toolFlash.n} className="toolflash" style={{ left: toolFlash.x }} aria-hidden>
               <TextMorph>{TOOL_LABEL[tool]}</TextMorph>
             </div>
           )}

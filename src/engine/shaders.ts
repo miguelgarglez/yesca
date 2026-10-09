@@ -302,6 +302,9 @@ void main() {
   rr += (hash(floor(vUv * 26.0)) - 0.5) * 0.16;
   float built = smoothstep(rr, rr + 0.16, uReveal * 1.3);
   col *= built;
+  // first light rides the milling front — the reveal is a lit pass over the relief
+  float front = built * (1.0 - built) * 4.0;
+  col += uHi * front * (0.2 + 0.8 * dif) * 0.5;
 
   frag = vec4(col, 1.0);
 }
