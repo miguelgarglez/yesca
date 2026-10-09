@@ -56,11 +56,11 @@ if (keep("beat2-orbit")) await clip("beat2-orbit", async (page) => {
 
 // beat 3: the match — scratch, sparks, flare, ignition
 if (keep("beat3-strike")) await clip("beat3-strike", async (page) => {
-  await page.waitForTimeout(1400);
+  await page.waitForTimeout(11000); // recording slows the reveal — wait it out fully
   await page.keyboard.press("2");
   await page.waitForTimeout(500);
   await drag(page, 540, 450, 110, -70, 12, 75);
-  await page.waitForTimeout(4200);
+  await page.waitForTimeout(7000);
 });
 
 // beat 4: fire runs downwind while the instruments tick
