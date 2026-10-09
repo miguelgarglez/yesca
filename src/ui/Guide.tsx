@@ -13,7 +13,7 @@ const COPY: Record<Exclude<GuideStep, "done">, { k: string; line: string; anchor
   },
   wind: {
     k: "step 3 of 3",
-    line: "That wind is real. It is blowing there, right now.",
+    line: "That wind is real — it is blowing there now. Cut a firebreak to argue with it.",
     anchor: "vane",
   },
 };

@@ -64,7 +64,7 @@ void main() {
         score += sn.g * wf * sf;
       }
     }
-    score *= uSpread * fu.r;
+    score *= uSpread * fu.r * (0.65 + 0.7 * hash(vUv * 51.3)); // ragged front
     // ember spotting: a hot cell upwind throws a spark here
     vec2 sparkFrom = vUv - W * uSpotDist * uTexel;
     vec4 ss = texture(uState, sparkFrom);
@@ -171,12 +171,9 @@ void main() {
 export const TERRAIN_VERT = /* glsl */ `
 precision highp float;
 out vec2 vUv;
-out vec3 vPos;
 void main() {
   vUv = uv;
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vPos = position.xyz;
-  gl_Position = projectionMatrix * mv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
 
@@ -184,7 +181,6 @@ export const TERRAIN_FRAG = /* glsl */ `
 precision highp float;
 in vec2 vUv;
 out vec4 frag;
-in vec3 vPos;
 
 uniform sampler2D uHeight;  // R = h01
 uniform sampler2D uState;

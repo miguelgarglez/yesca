@@ -121,7 +121,7 @@ export class FX {
     const inf = info.array as Float32Array;
     const W = this.stage.sceneMeters;
     const p = new THREE.Vector3();
-    const n = Math.min(pts.length * 6, BURST_COUNT - 40) * this.density;
+    const n = Math.min(pts.length * 9, BURST_COUNT - 40) * this.density;
     for (let i = 0; i < n; i++) {
       const idx = this.burstCursor;
       this.burstCursor = (this.burstCursor + 1) % BURST_COUNT;

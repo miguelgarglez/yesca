@@ -94,6 +94,8 @@ export default function App() {
   const haptics = useRef(new WebHaptics());
   const struckOnce = useRef(false);
   const reduced = useRef(prefersReducedMotion());
+  const rainDamp = useRef(0);
+  const [rhDamp, setRhDamp] = useState(0);
 
   // ---- load pipeline: initial + place switches ----
   const loadSeq = useRef(0);
@@ -208,6 +210,9 @@ export default function App() {
         const km2 = s.burnt * (FIELD_SIZE * r.stage.terrain.metersPerPx) ** 2 / 1e6;
         setBurntKm2((prev) => (Math.abs(prev - km2) > 0.005 ? km2 : prev));
         crackleRef.current.setLevel(s.burning * 14);
+        // rain wets the air — the humidity readout twitches up, then settles
+        rainDamp.current = Math.max(0, rainDamp.current - 0.35);
+        setRhDamp((prev) => (Math.abs(prev - rainDamp.current) > 0.5 ? rainDamp.current : prev));
       }
       raf = requestAnimationFrame(loop);
     };
@@ -299,6 +304,7 @@ export default function App() {
       } else if (t === "rain") {
         sim.stamp(2, stroke, 30, 0.9);
         fx.rain(p.u, p.v);
+        rainDamp.current = Math.min(6, rainDamp.current + 0.8);
       }
       canvas.setPointerCapture(e.pointerId);
     };
@@ -342,6 +348,7 @@ export default function App() {
         if (now - lastRain > 90) {
           sim.stamp(2, [stroke[stroke.length - 1]!], 34, 0.9);
           fx.rain(p.u, p.v);
+          rainDamp.current = Math.min(6, rainDamp.current + 0.8);
           lastRain = now;
         }
       }
@@ -472,7 +479,7 @@ export default function App() {
             <div className="inst">
               <div className="k">humidity</div>
               <div className="v">
-                <NumberFlow value={weather.rh} format={{ maximumFractionDigits: 0 }} />
+                <NumberFlow value={Math.min(100, weather.rh + rhDamp)} format={{ maximumFractionDigits: 0 }} />
                 <small>%</small>
               </div>
             </div>
