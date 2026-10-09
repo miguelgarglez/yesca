@@ -275,6 +275,25 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   border-color: rgba(255, 90, 31, 0.45);
 }
 .tbtn:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+/* tool switch answer: a name the dock says once, then drops */
+.toolflash {
+  position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%);
+  z-index: 25; pointer-events: none;
+  font-family: "IBM Plex Mono", monospace; font-size: 10px;
+  letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--amber);
+  background: rgba(13,12,10,0.62);
+  border: 1px solid rgba(233,225,206,0.08);
+  border-radius: 999px; padding: 3px 10px;
+  backdrop-filter: blur(6px);
+  animation: toolflash 1.3s var(--ease-out) both;
+}
+@keyframes toolflash {
+  0% { opacity: 0; transform: translateX(-50%) translateY(5px); }
+  14% { opacity: 0.95; transform: translateX(-50%) translateY(0); }
+  70% { opacity: 0.95; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+}
 
 /* ---------- guide: a strip engraved on the dock's top edge ---------- */
 

@@ -10,25 +10,31 @@ const meas = async (tag) => {
     const skip = document.querySelector(".g-skip")?.getBoundingClientRect();
     const line = document.querySelector(".g-line")?.getBoundingClientRect();
     const guide = document.querySelector(".guide")?.getBoundingClientRect();
-    return { skip: skip && { l: skip.left, r: skip.right }, line: line && { r: line.right }, guide: guide && { r: guide.right, h: guide.height } };
+    const text = document.querySelector(".g-line")?.textContent ?? "";
+    return { text, skip: skip && { l: skip.left, r: skip.right }, line: line && { r: line.right }, guide: guide && { r: guide.right, h: guide.height } };
   });
   console.log(tag, JSON.stringify(r), "viewport 375");
+  if (r.skip && r.skip.r > 375) throw new Error(`skip clipped at ${tag}: ${r.skip.r}`);
   return r;
 };
-await page.screenshot({ path: "/tmp/mg-step1.png" });
-await meas("step1");
-// orbit: drag on the void (left edge, off-terrain)
-await page.mouse.move(30, 200); await page.mouse.down();
-for (let i = 1; i <= 14; i++) { await page.mouse.move(30 + i * 6, 200 - i * 4); await page.waitForTimeout(55); }
+const s1 = await meas("step1");
+if (!s1.text.includes("land tilts")) throw new Error("step1 not the orbit copy");
+await page.screenshot({ path: "docs/mg-step1.png" });
+// orbit: drag along the top-right sky strip — must not touch terrain or the masthead
+await page.mouse.move(340, 110); await page.mouse.down();
+for (let i = 1; i <= 14; i++) { await page.mouse.move(340 - i * 9, 110); await page.waitForTimeout(55); }
 await page.mouse.up();
-await page.waitForTimeout(1200);
-await page.screenshot({ path: "/tmp/mg-step2.png" });
+await page.waitForFunction(() => document.querySelector(".g-line")?.textContent.includes("match"), { timeout: 5000 });
+await page.waitForTimeout(800);
+await page.screenshot({ path: "docs/mg-step2.png" });
 await meas("step2");
-// strike: drag on terrain
+// strike: drag on terrain — only possible now that step 2 taught it
 await page.mouse.move(190, 380); await page.mouse.down();
 for (let i = 1; i <= 14; i++) { await page.mouse.move(190 + i * 5, 380 + i * 3); await page.waitForTimeout(55); }
 await page.mouse.up();
-await page.waitForTimeout(1200);
-await page.screenshot({ path: "/tmp/mg-step3.png" });
+await page.waitForFunction(() => document.querySelector(".g-line")?.textContent.includes("cannot cross"), { timeout: 5000 });
+await page.waitForTimeout(800);
+await page.screenshot({ path: "docs/mg-step3.png" });
 await meas("step3");
+console.log("GUIDE MOBILE PASS");
 await b.close();

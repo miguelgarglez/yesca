@@ -77,9 +77,18 @@ export default function App() {
   const [tool, setTool] = useState<Tool>("match");
   const toolRef = useRef<Tool>("match");
   toolRef.current = tool;
+  const [toolFlash, setToolFlash] = useState(false);
+  const flashTool = () => setToolFlash(true);
+  useEffect(() => {
+    if (!toolFlash) return;
+    const t = setTimeout(() => setToolFlash(false), 1300);
+    return () => clearTimeout(t);
+  }, [toolFlash]);
   const [guideStep, setGuideStep] = useState<GuideStep>(
     () => (localStorage.getItem(GUIDE_KEY) ? "done" : "orbit"),
   );
+  const guideStepRef = useRef<GuideStep>(guideStep);
+  guideStepRef.current = guideStep;
   const [burnsOn, setBurnsOn] = useState(false);
   const [hotspots, setHotspots] = useState<Hotspot[] | null>(null);
   const [soundOn, setSoundOn] = useState(() => localStorage.getItem("yesca.sound") === "1");
@@ -289,7 +298,9 @@ export default function App() {
     let gatePick: ReturnType<Stage["pick"]> = null;
     stage.orbitGate = (e) => {
       gatePick = stage.pick(e.clientX, e.clientY); // one raycast per press, shared
-      return toolRef.current === "orbit" || !gatePick;
+      // while the tour teaches orbit, every first drag orbits — a press that
+      // happens to land on terrain must not silently skip the strike lesson
+      return toolRef.current === "orbit" || !gatePick || guideStepRef.current === "orbit";
     };
 
     let stroke: { u: number; v: number }[] = [];
@@ -301,7 +312,7 @@ export default function App() {
     const down = (e: PointerEvent) => {
       pressPt = { x: e.clientX, y: e.clientY, type: e.pointerType };
       const t = toolRef.current;
-      if (t === "orbit") return;
+      if (t === "orbit" || guideStepRef.current === "orbit") return;
       const p = gatePick ?? stage.pick(e.clientX, e.clientY);
       gatePick = null;
       if (!p) return; // off-terrain presses fall through to orbit
@@ -465,13 +476,14 @@ export default function App() {
           } else if (t === "break") r.sim.stamp(1, [c], 14);
           else r.sim.stamp(2, [c], 70);
           setTool("orbit");
+          flashTool();
           return;
         }
       }
       if (sheetsOpen) return;
       const map: Record<string, Tool> = { "1": "orbit", "2": "match", "3": "break", "4": "rain", o: "orbit", m: "match", b: "break", r: "rain" };
       const t = map[e.key];
-      if (t) setTool(t);
+      if (t) { setTool(t); flashTool(); }
       if (e.key === "?") {
         setGuideStep("orbit");
         localStorage.removeItem(GUIDE_KEY);
@@ -658,7 +670,7 @@ export default function App() {
                 key={t}
                 data-tool={t}
                 className={`tbtn ${tool === t ? "on" : ""}`}
-                onClick={() => setTool(t)}
+                onClick={() => { setTool(t); flashTool(); }}
                 aria-pressed={tool === t}
                 title={`${TOOL_LABEL[t]} (${t === "orbit" ? "1" : t === "match" ? "2" : t === "break" ? "3" : "4"})`}
               >
@@ -666,6 +678,12 @@ export default function App() {
               </button>
             ))}
           </nav>
+          {/* the tool's name answers the switch, then gets out of the way */}
+          {toolFlash && (
+            <div className="toolflash" aria-hidden>
+              <TextMorph>{TOOL_LABEL[tool]}</TextMorph>
+            </div>
+          )}
 
           {hoverTag && (
             <div className="hoverchip" style={{ left: hoverTag.x + 14, top: hoverTag.y - 10 }}>

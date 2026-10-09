@@ -18,13 +18,21 @@ await page.goto(url, { waitUntil: "networkidle" });
 await page.waitForFunction(() => window.__yesca, { timeout: 45000 });
 await page.waitForTimeout(2600);
 
-// 1) orbit drag should NOT ignite
+// 1) orbit drag should NOT ignite — and must actually teach step 1:
+// the guide gates strikes until an orbit has happened, so drag far enough
 await page.click('button[data-tool="orbit"]');
-await page.mouse.move(600, 400);
-await page.mouse.down();
-await page.mouse.move(700, 380, { steps: 8 });
-await page.mouse.up();
-await page.waitForTimeout(1200);
+for (let attempt = 0; attempt < 4; attempt++) {
+  await page.mouse.move(600, 400);
+  await page.mouse.down();
+  await page.mouse.move(880, 300, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(700);
+  const advanced = await page.evaluate(() => {
+    const el = document.querySelector(".g-line");
+    return !el || el.textContent.includes("match");
+  });
+  if (advanced) break;
+}
 const afterOrbit = await page.evaluate(() => window.__yesca.stats());
 
 // 2) match strike: press + drag ignites along the stroke
