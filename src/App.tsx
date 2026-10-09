@@ -107,6 +107,11 @@ export default function App() {
   const struckOnce = useRef(false);
   const brokeOnce = useRef(false);
   const reduced = useRef(prefersReducedMotion());
+  // haptics are motion too — the reduced-motion guard is the opt-out
+  const nudge = () => {
+    if (reduced.current) return;
+    haptics.current.trigger("nudge").catch(() => {});
+  };
   const rainDamp = useRef(0);
   const [rhDamp, setRhDamp] = useState(0);
 
@@ -419,7 +424,7 @@ export default function App() {
         fx.flareAt(wp);
         stage.nudgeFocus(wp);
         crackleRef.current.strike();
-        haptics.current.trigger("nudge").catch(() => {});
+        nudge();
         struckOnce.current = true;
         // honest feedback when the strike found nothing to hold
         setTimeout(() => {
@@ -474,11 +479,12 @@ export default function App() {
             }
             crackleRef.current.strike();
             struckOnce.current = true;
-            haptics.current.trigger("nudge").catch(() => {});
+            nudge();
           } else if (t === "break") r.sim.stamp(1, [c], 14);
           else r.sim.stamp(2, [c], 70);
           setTool("orbit");
-          flashTool();
+          const ob = document.querySelector('.tbtn[data-tool="orbit"]')?.getBoundingClientRect();
+          flashTool(ob ? ob.left + ob.width / 2 : innerWidth / 2);
           return;
         }
       }
@@ -487,7 +493,8 @@ export default function App() {
       const t = map[e.key];
       if (t) {
         setTool(t);
-        const b = document.querySelector(`[data-tool="${t}"]`)?.getBoundingClientRect();
+        nudge();
+        const b = document.querySelector(`.tbtn[data-tool="${t}"]`)?.getBoundingClientRect();
         flashTool(b ? b.left + b.width / 2 : innerWidth / 2);
       }
       if (e.key === "?") {
@@ -505,7 +512,7 @@ export default function App() {
     const next = !burnsOn;
     setBurnsOn(next);
     r.stage.hotspotShow = next;
-    haptics.current.trigger("nudge").catch(() => {});
+    nudge();
     if (next) {
       // the satellites answer out loud — the one fact no demo can fake
       const call = (n: number) => {
@@ -536,7 +543,7 @@ export default function App() {
   const toggleSound = () => {
     const next = !soundOn;
     setSoundOn(next);
-    haptics.current.trigger("nudge").catch(() => {});
+    nudge();
     const c = crackleRef.current;
     if (next) c.start();
     else c.stop();
@@ -661,7 +668,7 @@ export default function App() {
                 const r0 = e.currentTarget.getBoundingClientRect();
                 setShareAnchor({ x: r0.left, y: r0.top });
                 setShareOpen(true);
-                haptics.current.trigger("nudge").catch(() => {});
+                nudge();
               }}
             >
               press the hillside into a card ↗
@@ -677,14 +684,14 @@ export default function App() {
               <button
                 key={t}
                 data-tool={t}
-                className={`tbtn ${tool === t ? "on" : ""}`}
+                className={`tbtn ${(guideStep === "orbit" ? t === "orbit" : tool === t) ? "on" : ""}`}
                 onClick={(e) => {
                   setTool(t);
                   const b = e.currentTarget.getBoundingClientRect();
                   flashTool(b.left + b.width / 2);
-                  haptics.current.trigger("nudge").catch(() => {});
+                  nudge();
                 }}
-                aria-pressed={tool === t}
+                aria-pressed={guideStep === "orbit" ? t === "orbit" : tool === t}
                 title={`${TOOL_LABEL[t]} (${t === "orbit" ? "1" : t === "match" ? "2" : t === "break" ? "3" : "4"})`}
               >
                 {TOOL_ICON[t]}
@@ -734,7 +741,7 @@ export default function App() {
             }}
             onPick={(p) => {
               setPlacesOpen(false);
-              haptics.current.trigger("nudge").catch(() => {});
+              nudge();
               loadPlace(p, false);
             }}
           />

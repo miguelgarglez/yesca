@@ -282,7 +282,8 @@ void main() {
   halo += texture(uState, fuv + vec2(uTexel.x * 7.0, -uTexel.y * 7.0)).g;
   halo += texture(uState, fuv - vec2(uTexel.x * 7.0, -uTexel.y * 7.0)).g;
   float burnHalo = halo * 0.125;
-  col += uEmber * burnHalo * 0.45;
+  // the fire throws warmth back onto the unburned slope
+  col += uEmber * burnHalo * (0.45 + 0.35 * dif);
 
   // wet sheen
   col = mix(col, col * vec3(0.82, 0.9, 1.06), clamp(fu.g - 0.45, 0.0, 1.0) * 0.7);
@@ -299,8 +300,9 @@ void main() {
 
   // reveal sweep: unbuilt region is dark, milled in patches
   float rr = distance(vUv, vec2(0.5)) * 1.15;
-  rr += (hash(floor(vUv * 26.0)) - 0.5) * 0.16;
-  float built = smoothstep(rr, rr + 0.16, uReveal * 1.3);
+  // one continuous milling front, wandering like a cut — no cell mosaic
+  rr += (vnoise(vUv * 6.0) - 0.5) * 0.22 + (vnoise(vUv * 17.0) - 0.5) * 0.05;
+  float built = smoothstep(rr, rr + 0.14, uReveal * 1.3);
   col *= built;
   // first light rides the milling front — the reveal is a lit pass over the relief
   float front = built * (1.0 - built) * 4.0;

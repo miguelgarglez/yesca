@@ -193,8 +193,13 @@ body.revealed .tray { animation: hud-in-c 700ms var(--ease-out) 300ms backwards;
   z-index: 15;
   transition: opacity 300ms var(--ease-out);
 }
-/* the tour owns the lower-left corner while it teaches */
-.rail.dim, .instruments.dim { opacity: 0; pointer-events: none; }
+/* the tour owns the lower-left corner while it teaches.
+   animation:none is load-bearing — a running hud-in would override the dim
+   and flash the cluster in front of the lesson; removing .dim replays it */
+.rail.dim, .instruments.dim,
+body.revealed .rail.dim, body.revealed .instruments.dim {
+  opacity: 0; pointer-events: none; animation: none;
+}
 .lever {
   display: flex; align-items: center; gap: 9px;
   background: none; border: none; cursor: pointer;
@@ -532,6 +537,7 @@ body.revealed .tray { animation: hud-in-c 700ms var(--ease-out) 300ms backwards;
   .rail {
     left: 16px; right: auto; bottom: 148px; top: auto; gap: 14px;
   }
+  .lever { min-height: 44px; }
   .sharechip { left: 16px; bottom: 186px; }
   .tray { bottom: 14px; padding: 6px 10px 6px 12px; }
   .dock-brand span { display: none; }
@@ -547,7 +553,7 @@ body.revealed .tray { animation: hud-in-c 700ms var(--ease-out) 300ms backwards;
 
 @media (prefers-reduced-motion: reduce) {
   .guide, .placetray, .sheet, .sheet-back, .offline, .hoverchip, .loading .bar i,
-  .sharechip, .masthead, .instruments, .rail, .tray {
+  .sharechip, .masthead, .instruments, .rail, .tray, .toolflash {
     animation-duration: 1ms; animation-delay: 0ms;
   }
   .vane .needle { transition-duration: 200ms; }
