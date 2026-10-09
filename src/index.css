@@ -275,14 +275,6 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   border-color: rgba(255, 90, 31, 0.45);
 }
 .tbtn:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
-.toolname {
-  font-family: "IBM Plex Mono", monospace; font-size: 10px;
-  letter-spacing: 0.16em; text-transform: uppercase;
-  color: var(--amber); opacity: 0.85;
-  min-width: 58px; text-align: left; padding-left: 8px;
-  border-left: 1px solid rgba(233,225,206,0.12);
-  margin-left: 4px;
-}
 
 /* ---------- guide: a strip engraved on the dock's top edge ---------- */
 
@@ -293,7 +285,6 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   padding: 0 4px 10px;
   /* engraved strip: bare text over the terrain, a single ember rule below */
   animation: guide-in 420ms var(--ease-spring) backwards;
-  white-space: nowrap;
   max-width: min(92vw, 560px);
 }
 .guide::after {
@@ -315,7 +306,9 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   font-family: "Spectral", serif; font-style: italic; font-weight: 300;
   font-size: 16px; line-height: 1.4; color: var(--bone);
   text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 2px 22px rgba(0,0,0,0.95);
+  flex: 1 1 auto; min-width: 0;
 }
+.g-k, .g-dots, .g-skip { flex: none; }
 .g-dots { display: inline-flex; gap: 5px; align-self: center; }
 .g-dots i {
   width: 4px; height: 4px; border-radius: 50%;
@@ -517,8 +510,10 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   .tray { bottom: 14px; padding: 6px 10px 6px 12px; }
   .dock-brand span { display: none; }
   .tbtn { width: 44px; height: 44px; }
-  .toolname { display: none; }
-  .guide { bottom: 84px; white-space: normal; max-width: 88vw; }
+  .guide { bottom: 84px; max-width: 88vw; gap: 10px; }
+  /* the dots carry the step count; the kicker is what pushed the row wide */
+  .guide .g-k { display: none; }
+  .g-line { overflow: hidden; text-overflow: ellipsis; }
   .placetray { top: 56px; right: 16px; left: 16px; width: auto; }
 }
 

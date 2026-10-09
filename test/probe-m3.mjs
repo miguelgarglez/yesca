@@ -65,14 +65,18 @@ const clicked = await page.evaluate(() => {
   return false;
 });
 console.log("picked LA:", clicked);
-await page.waitForTimeout(6000);
+// wait for the new terrain to actually land — a fixed sleep raced the fetch
+await page.waitForFunction(() => !document.querySelector(".switching"), { timeout: 90000 });
+await page.waitForTimeout(1500);
 await page.screenshot({ path: "/tmp/y-m3-la.png" });
 const hash = await page.evaluate(() => location.hash);
 console.log("hash:", hash);
 
 // share sheet — the chip only exists once the hillside is scarred
 await page.evaluate(() => window.__yesca.ignite(0.5, 0.5));
-await page.waitForTimeout(9000);
+await page.waitForFunction(() => window.__yesca.stats().burnt > 0.0002, { timeout: 25000 })
+  .catch(() => page.evaluate(() => window.__yesca.ignite(0.44, 0.42)));
+await page.waitForSelector(".sharechip", { timeout: 25000 });
 await page.click(".sharechip");
 await page.waitForTimeout(1200);
 await page.screenshot({ path: "/tmp/y-m3-share.png" });

@@ -5,3 +5,4 @@ dist/
 .vercel
 _*.mjs
 test/results/
+.env*

@@ -665,9 +665,6 @@ export default function App() {
                 {TOOL_ICON[t]}
               </button>
             ))}
-            <div className="toolname">
-              <TextMorph>{TOOL_LABEL[tool]}</TextMorph>
-            </div>
           </nav>
 
           {hoverTag && (

@@ -61,9 +61,9 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
       const x = W * 0.94 + Math.cos(a) * r;
       const y = 26 + Math.sin(a) * r * 0.62;
       const glow = Math.max(0, 1 - r / 380);
-      ctx.fillStyle = `rgba(255,${110 + rnd() * 60},40,${(0.14 + rnd() * 0.5) * glow})`;
+      ctx.fillStyle = `rgba(255,${110 + rnd() * 60},40,${(0.22 + rnd() * 0.6) * glow})`;
       ctx.beginPath();
-      ctx.arc(x, y, 0.8 + rnd() * 2.4, 0, Math.PI * 2);
+      ctx.arc(x, y, 1.4 + rnd() * 3.6, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.fillStyle = "#e9e1ce";

@@ -4,7 +4,7 @@
 
 **Strike a match anywhere on Earth. Real terrain and tonight's real wind do the rest.**
 
-Live: **https://yesca.vercel.app**
+Live: **https://yesca-theta.vercel.app**
 
 ## What it does
 

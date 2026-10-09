@@ -5,15 +5,15 @@ export type GuideStep = "orbit" | "strike" | "break" | "done";
 const COPY: Record<Exclude<GuideStep, "done">, { k: string; line: string }> = {
   orbit: {
     k: "step 1 of 3",
-    line: "Drag the darkness — the land tilts.",
+    line: "Drag the dark — the land tilts.",
   },
   strike: {
     k: "step 2 of 3",
-    line: "Now press on the land and drag — that is a match.",
+    line: "Press the land, drag — a match.",
   },
   break: {
     k: "step 3 of 3",
-    line: "Cut a line it cannot cross — the firebreak.",
+    line: "Cut a line it cannot cross.",
   },
 };
 

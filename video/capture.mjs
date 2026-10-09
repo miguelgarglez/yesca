@@ -81,7 +81,7 @@ if (keep("beat5-tools")) await clip("beat5-tools", async (page) => {
 // beat 6: real burns — NASA diamonds fade in
 if (keep("beat6-real")) await clip("beat6-real", async (page) => {
   await page.waitForTimeout(1500);
-  await page.click(".rail .lever", { position: { x: 20, y: 10 } }).catch(() => {});
+  await page.click(".instruments .lever", { position: { x: 20, y: 10 } }).catch(() => {});
   await page.waitForTimeout(4500);
 });
 

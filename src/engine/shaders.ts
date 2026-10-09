@@ -254,14 +254,14 @@ void main() {
   nb += step(1.5, texture(uState, fuv - vec2(0.0, uTexel.y * 2.5)).r);
   if (st.r > 1.5) {
     // burnt: char with ash mottling, cooling embers
-    float mot = vnoise(vUv * 640.0 + h * 40.0);
+    float mot = vnoise(vUv * 46.0 + vec2(hash(floor(vUv * 8.0)), hash(floor(vUv * 8.0) + 19.7)) * 9.0);
     vec3 c = mix(uChar, uAsh, smoothstep(0.45, 0.8, mot) * 0.35);
     vec3 burnCol = c * (0.25 + 0.45 * dif);
     float mask = smoothstep(0.1, 0.9, (nb + 1.0) / 5.0);
     col = mix(col, burnCol, mask);
     // fresh char radiates along the rim for a few sim-seconds
     float age = uTime - st.b;
-    float ember = st.g * (0.6 + 0.4 * sin(uTime * 7.0 + vUv.x * 900.0 + vUv.y * 731.0));
+    float ember = st.g * (0.55 + 0.45 * vnoise(vUv * 90.0 + vec2(uTime * 3.1, -uTime * 2.3)));
     col += uEmber * (ember * 0.6 + exp(-max(age, 0.0) * 0.7) * 0.55 * mask);
   } else if (st.r > 0.5) {
     // burning: dim ember body, incandescent only where intensity peaks
