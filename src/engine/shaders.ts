@@ -90,7 +90,7 @@ void main() {
     }
     float a01 = clamp(1.0 - rem / max(fu.r, 0.05), 0.0, 1.0);
     float flick = 0.82 + 0.18 * sin(uTime * 9.0 + dot(vUv, vec2(311.0, 743.0)));
-    float g = (1.12 * exp(-a01 * 2.4) + 0.10) * flick;
+    float g = (1.15 * exp(-a01 * 3.4) + 0.05) * flick;
     frag = vec4(1.0, g, igniteT, rem);
     return;
   }
@@ -140,6 +140,7 @@ in vec2 vUv;
 out vec4 frag;
 
 uniform sampler2D uPrev;
+uniform sampler2D uFuel;
 uniform vec4 uStamps[64];    // xy = uv center, z = radius(px)*texel, w = strength
 uniform int uCount;
 uniform vec2 uTexel;
@@ -148,6 +149,7 @@ uniform float uTime;
 
 void main() {
   vec4 prev = texture(uPrev, vUv);
+  vec4 fu = texture(uFuel, vUv);
   float acc = 0.0;
   for (int i = 0; i < 64; i++) {
     if (i >= uCount) break;
@@ -156,7 +158,8 @@ void main() {
     acc = max(acc, (1.0 - smoothstep(st.z * 0.4, st.z, d)) * st.w);
   }
   if (uMode == 0) {
-    if (acc > 0.0 && prev.r < 0.5) frag = vec4(1.0, 1.15, uTime, prev.a > 0.0 ? prev.a : 0.9);
+    // a match only catches where real fuel exists, and inherits its density
+    if (acc > 0.0 && prev.r < 0.5 && fu.r > 0.04) frag = vec4(1.0, 1.15, uTime, fu.r);
     else frag = prev;
   } else if (uMode == 1) {
     frag = vec4(max(prev.r - acc, 0.0), max(prev.g, acc), prev.b, prev.a);
@@ -220,7 +223,7 @@ void main() {
 
   vec3 base = mix(uLo, uHi, smoothstep(0.0, 1.0, h));
   base *= 0.9 + 0.2 * vnoise(vUv * 320.0);
-  vec3 col = base * (0.5 + 0.6 * sky + 1.45 * pow(dif, 1.1));
+  vec3 col = base * (0.38 + 0.5 * sky + 1.5 * pow(dif, 1.15));
   // rim of warm from the key light
   col += uHi * pow(dif, 6.0) * 0.24;
 
@@ -245,7 +248,7 @@ void main() {
     col += uEmber * ember * 0.6;
   } else if (st.r > 0.5) {
     // burning: dim ember body, incandescent only where intensity peaks
-    float i = st.g;
+    float i = st.g * (0.7 + 0.6 * vnoise(vUv * 110.0 + uTime * 0.4));
     vec3 c = mix(uChar * 0.55, uEmber, clamp(i * 1.05, 0.0, 1.0));
     c = mix(c, uHot, smoothstep(0.95, 1.3, i));
     float lick = vnoise(vUv * 700.0 + vec2(0.0, -uTime * 3.0));
@@ -413,11 +416,14 @@ uniform float uShow;
 uniform float uTime;
 out float vConf;
 out float vPhase;
+out float vShow;
 void main() {
   vConf = aConf;
   vPhase = aConf * 17.0;
+  vShow = uShow;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_Position = projectionMatrix * mv * uShow;
+  // hide by moving off the frustum — never multiply position by the fade
+  gl_Position = uShow > 0.003 ? projectionMatrix * mv : vec4(2.0, 2.0, 2.0, 1.0);
   float pulse = 1.0 + 0.3 * sin(uTime * 2.4 + vPhase);
   gl_PointSize = uShow * 15.0 * pulse * uPixelScale / max(1.0, -mv.z / 900.0);
 }
@@ -427,6 +433,7 @@ export const HOTSPOT_FRAG = /* glsl */ `
 precision highp float;
 in float vConf;
 in float vPhase;
+in float vShow;
 uniform float uTime;
 out vec4 frag;
 void main() {
@@ -436,7 +443,7 @@ void main() {
   float ring = (1.0 - smoothstep(0.4, 0.5, diamond)) * smoothstep(0.3, 0.4, diamond);
   float pulse = 0.5 + 0.5 * sin(uTime * 2.4 + vPhase);
   vec3 red = vec3(1.0, 0.23, 0.19);
-  float a = body * (0.75 + 0.25 * vConf) + ring * pulse * 0.5;
+  float a = (body * (0.75 + 0.25 * vConf) + ring * pulse * 0.5) * vShow;
   frag = vec4(red, a);
 }
 `;

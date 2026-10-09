@@ -70,47 +70,50 @@ export async function fetchHotspots(place: Place): Promise<HotspotResult> {
   const points: Hotspot[] = [];
   let live = false;
 
-  const jobs: Promise<void>[] = [];
+  const urls: { url: string; date: string }[] = [];
   for (const date of dates)
     for (const layer of layers)
       for (let row = rowMin; row <= rowMax; row++)
         for (let col = colMin; col <= colMax; col++)
-          jobs.push(
-            (async () => {
-              const res = await fetch(tileUrl(layer, date, row, col));
-              if (!res.ok) return; // 404 = no detections in tile
-              live = true;
-              const buf = await res.arrayBuffer();
-              const tile = new VectorTile(new PbfReader(buf));
-              for (const lname of Object.keys(tile.layers)) {
-                const layerData = tile.layers[lname]!;
-                for (let i = 0; i < layerData.length; i++) {
-                  const f = layerData.feature(i);
-                  const p = f.properties as Record<string, unknown>;
-                  const lat = Number(p.LATITUDE);
-                  const lon = Number(p.LONGITUDE);
-                  if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-                  const uid = String(p.UID ?? `${lat},${lon},${p.ACQ_TIME}`);
-                  if (seen.has(uid)) continue;
-                  seen.add(uid);
-                  // mercator z13 px within the 3x3 block
-                  const px = ((lon + 180) / 360) * 2 ** SIM_ZOOM * TILE_PX - x0 * TILE_PX;
-                  const py = mercY(lat) * 2 ** SIM_ZOOM * TILE_PX - y0 * TILE_PX;
-                  const u = px / edge;
-                  const v = py / edge;
-                  if (u < 0 || u > 1 || v < 0 || v > 1) continue;
-                  const frp = Number(p.FRP) || 0;
-                  points.push({
-                    u,
-                    v,
-                    conf: Math.min(1, frp / 60),
-                    date,
-                  });
-                }
-              }
-            })(),
-          );
-  await Promise.allSettled(jobs);
+          urls.push({ url: tileUrl(layer, date, row, col), date });
+
+  // polite concurrency: 6 tiles in flight at a time
+  const workers = Array.from({ length: 6 }, async () => {
+    let job: { url: string; date: string } | undefined;
+    while ((job = urls.pop())) {
+      try {
+        const res = await fetch(job.url);
+        if (!res.ok) continue; // 404 = no detections in tile
+        live = true;
+        const buf = await res.arrayBuffer();
+        const tile = new VectorTile(new PbfReader(buf));
+        for (const lname of Object.keys(tile.layers)) {
+          const layerData = tile.layers[lname]!;
+          for (let i = 0; i < layerData.length; i++) {
+            const f = layerData.feature(i);
+            const p = f.properties as Record<string, unknown>;
+            const lat = Number(p.LATITUDE);
+            const lon = Number(p.LONGITUDE);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+            const uid = String(p.UID ?? `${lat},${lon},${p.ACQ_TIME}`);
+            if (seen.has(uid)) continue;
+            seen.add(uid);
+            // mercator z13 px within the 3x3 block
+            const px = ((lon + 180) / 360) * 2 ** SIM_ZOOM * TILE_PX - x0 * TILE_PX;
+            const py = mercY(lat) * 2 ** SIM_ZOOM * TILE_PX - y0 * TILE_PX;
+            const u = px / edge;
+            const v = py / edge;
+            if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+            const frp = Number(p.FRP) || 0;
+            points.push({ u, v, conf: Math.min(1, frp / 60), date: job.date });
+          }
+        }
+      } catch {
+        /* a dead tile is just a quiet patch of sky */
+      }
+    }
+  });
+  await Promise.allSettled(workers);
   return { points, dates, live };
 }
 

@@ -30,7 +30,9 @@ export function PlaceTray({ open, onClose, onPick }: Props) {
       if (e.key === "Escape") onClose();
     };
     const onDown = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) onClose();
+      const el = e.target as HTMLElement;
+      // the trigger button itself toggles — don't let outside-click race it
+      if (rootRef.current && !rootRef.current.contains(el) && !el.closest(".place-btn")) onClose();
     };
     addEventListener("keydown", onKey);
     addEventListener("pointerdown", onDown);

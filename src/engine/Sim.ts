@@ -4,12 +4,13 @@ import { QUAD_VERT, SIM_FRAG, SMOKE_FRAG, STAMP_FRAG } from "./shaders";
 
 const N = FIELD_SIZE;
 
-function makeRT(type: THREE.TextureDataType) {
+function makeRT(type: THREE.TextureDataType, linear: boolean) {
+  const f = linear ? THREE.LinearFilter : THREE.NearestFilter;
   return new THREE.WebGLRenderTarget(N, N, {
     type,
     format: THREE.RGBAFormat,
-    minFilter: THREE.LinearFilter,
-    magFilter: THREE.LinearFilter,
+    minFilter: f,
+    magFilter: f,
     wrapS: THREE.ClampToEdgeWrapping,
     wrapT: THREE.ClampToEdgeWrapping,
     depthBuffer: false,
@@ -62,27 +63,30 @@ export class Sim {
   wind = { x: 0, y: 0 };
   windAmt = 0;
   moisture0 = 0.4;
+  linear = true;
   /** smoothed fire load 0..1 for audio/FX; updated from stats() calls */
   level = 0;
 
-  constructor(gl: THREE.WebGLRenderer, height01: Float32Array, weather: Weather, seed: number) {
+  constructor(gl: THREE.WebGLRenderer, height01: Float32Array, weather: Weather, seed: number, linear = true) {
     this.gl = gl;
+    this.linear = linear;
+    const filt = linear ? THREE.LinearFilter : THREE.NearestFilter;
     this.geoTex = new THREE.DataTexture(height01, N, N, THREE.RGBAFormat, THREE.FloatType);
     this.geoTex.needsUpdate = true;
-    this.geoTex.minFilter = THREE.LinearFilter;
-    this.geoTex.magFilter = THREE.LinearFilter;
+    this.geoTex.minFilter = filt;
+    this.geoTex.magFilter = filt;
 
     const geo = new THREE.PlaneGeometry(2, 2);
     this.quad = new THREE.Mesh(geo, this.mat);
     this.quad.frustumCulled = false;
     this.quadScene.add(this.quad);
 
-    this.fuelA = makeRT(THREE.FloatType);
-    this.fuelB = makeRT(THREE.FloatType);
-    this.dynA = makeRT(THREE.FloatType);
-    this.dynB = makeRT(THREE.FloatType);
-    this.smokeA = makeRT(THREE.FloatType);
-    this.smokeB = makeRT(THREE.FloatType);
+    this.fuelA = makeRT(THREE.FloatType, linear);
+    this.fuelB = makeRT(THREE.FloatType, linear);
+    this.dynA = makeRT(THREE.FloatType, linear);
+    this.dynB = makeRT(THREE.FloatType, linear);
+    this.smokeA = makeRT(THREE.FloatType, linear);
+    this.smokeB = makeRT(THREE.FloatType, linear);
 
     this.clearMat = new THREE.ShaderMaterial({
       vertexShader: QUAD_VERT,
@@ -131,6 +135,7 @@ export class Sim {
       glslVersion: THREE.GLSL3,
       uniforms: {
         uPrev: { value: null },
+        uFuel: { value: null },
         uStamps: { value: Array.from({ length: 64 }, () => new THREE.Vector4()) },
         uCount: { value: 0 },
         uTexel: { value: new THREE.Vector2(1 / N, 1 / N) },
@@ -155,7 +160,7 @@ export class Sim {
         uniform sampler2D uState;
         void main() {
           float burning = 0.0, burnt = 0.0;
-          vec2 base = vUv * 752.0;
+          vec2 base = floor(vUv * 48.0) * 16.0;
           for (int j = 0; j < 16; j++)
           for (int i = 0; i < 16; i++) {
             float s = texelFetch(uState, ivec2(base + vec2(float(i), float(j))), 0).r;
@@ -241,8 +246,8 @@ export class Sim {
     this.geoTex.dispose();
     this.geoTex = new THREE.DataTexture(height01, N, N, THREE.RGBAFormat, THREE.FloatType);
     this.geoTex.needsUpdate = true;
-    this.geoTex.minFilter = THREE.LinearFilter;
-    this.geoTex.magFilter = THREE.LinearFilter;
+    this.geoTex.minFilter = this.linear ? THREE.LinearFilter : THREE.NearestFilter;
+    this.geoTex.magFilter = this.linear ? THREE.LinearFilter : THREE.NearestFilter;
     this.simMat.uniforms.uGeo!.value = this.geoTex;
     this.applyWeather(weather);
     this.initFuel(seed);
@@ -264,7 +269,12 @@ export class Sim {
 
   /** queue a brush stroke; mode 0=ignite 1=firebreak 2=rain 3=scratch */
   stamp(mode: 0 | 1 | 2 | 3, points: { u: number; v: number }[], radiusPx: number, strength = 1) {
-    const pts = points.slice(0, 64).map((p) => new THREE.Vector4(p.u, p.v, radiusPx / N, strength));
+    // resample long strokes evenly so a 64-stamp cap covers the whole path
+    const step = Math.max(1, Math.ceil(points.length / 64));
+    const pts = points
+      .filter((_, i) => i % step === 0)
+      .slice(0, 64)
+      .map((p) => new THREE.Vector4(p.u, p.v, radiusPx / N, strength));
     if (pts.length) this.stampQueue.push({ mode, pts });
   }
 
@@ -275,6 +285,7 @@ export class Sim {
       const dst = isDyn ? this.dynB : this.fuelB;
       const u = this.stampMat.uniforms;
       u.uPrev!.value = src.texture;
+      u.uFuel!.value = this.fuelA.texture;
       u.uMode!.value = mode;
       u.uTime!.value = this.time;
       const arr = u.uStamps!.value as THREE.Vector4[];

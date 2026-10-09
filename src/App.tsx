@@ -88,8 +88,10 @@ export default function App() {
   const [burntKm2, setBurntKm2] = useState(0);
   const [hoverTag, setHoverTag] = useState<{ x: number; y: number; text: string } | null>(null);
   const [offline, setOffline] = useState(!navigator.onLine);
+  const [notice, setNotice] = useState<string | null>(null);
   const readyRef = useRef<Ready | null>(null);
   const placeRef = useRef<Place>(DEFAULT_PLACE);
+  const burnsCache = useRef(new Map<string, Hotspot[]>());
   const crackleRef = useRef(new Crackle());
   const haptics = useRef(new WebHaptics());
   const struckOnce = useRef(false);
@@ -117,7 +119,8 @@ export default function App() {
           return;
         }
         const stage = new Stage(canvasRef.current!, terr.field);
-        const sim = new Sim(stage.renderer, terr.heightTexData, wx, placeSeed(p));
+        const linear = !!g.getExtension("OES_texture_float_linear");
+        const sim = new Sim(stage.renderer, terr.heightTexData, wx, placeSeed(p), linear);
         stage.attachSim(sim);
         const fx = new FX(stage, sim);
         if (reduced.current) {
@@ -138,21 +141,21 @@ export default function App() {
       if (!p.name) p = { ...p, name: nameFor(p) };
       setPlace(p);
       setWeather(wx);
-      setHotspots(null);
+      const pk = `${p.lat.toFixed(4)},${p.lon.toFixed(4)}`;
+      setHotspots(burnsCache.current.get(pk) ?? null);
       setBurnsOn(false);
       r.stage.hotspotShow = false;
+      r.stage.setHotspots(burnsCache.current.get(pk) ?? []);
       history.replaceState(null, "", hashForPlace(p));
-      fetchHotspots(p)
-        .then((h) => {
-          if (seq !== loadSeq.current) return;
-          setHotspots(h.points);
-          r!.stage.setHotspots(h.points);
-        })
-        .catch(() => setHotspots([]));
     } catch (e) {
       if (seq !== loadSeq.current) return;
       if (first) setErr(e instanceof Error ? e.message : String(e));
-      else setSwitching(null); // failed switch keeps the old hillside
+      else {
+        // the old hillside stays — say so instead of going silent
+        setSwitching(null);
+        setNotice("that hillside didn't answer — you're still on the last one");
+        setTimeout(() => setNotice(null), 4200);
+      }
     } finally {
       if (seq === loadSeq.current) setSwitching(null);
     }
@@ -240,13 +243,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
-  // sound toggle
+  // sound lives only inside the click gesture, for autoplay policy
   useEffect(() => {
-    const c = crackleRef.current;
-    if (soundOn) c.start();
-    else c.stop();
     localStorage.setItem("yesca.sound", soundOn ? "1" : "0");
-    return () => c.stop();
+    return () => crackleRef.current.stop();
   }, [soundOn]);
 
   // guide progression — a poll watches real gestures, so any order works
@@ -284,7 +284,11 @@ export default function App() {
     const r = ready;
     if (!canvas || !r) return;
     const { stage, sim, fx } = r;
-    stage.orbitGate = (e) => toolRef.current === "orbit" || !stage.pick(e.clientX, e.clientY);
+    let gatePick: ReturnType<Stage["pick"]> = null;
+    stage.orbitGate = (e) => {
+      gatePick = stage.pick(e.clientX, e.clientY); // one raycast per press, shared
+      return toolRef.current === "orbit" || !gatePick;
+    };
 
     let stroke: { u: number; v: number }[] = [];
     let active = false;
@@ -294,13 +298,14 @@ export default function App() {
     const down = (e: PointerEvent) => {
       const t = toolRef.current;
       if (t === "orbit") return;
-      const p = stage.pick(e.clientX, e.clientY);
+      const p = gatePick ?? stage.pick(e.clientX, e.clientY);
+      gatePick = null;
       if (!p) return; // off-terrain presses fall through to orbit
       e.stopImmediatePropagation();
       active = true;
       stroke = [{ u: p.u, v: p.v }];
       if (t === "match") {
-        sim.stamp(3, stroke, 4);
+        sim.stamp(3, stroke, 3);
       } else if (t === "rain") {
         sim.stamp(2, stroke, 30, 0.9);
         fx.rain(p.u, p.v);
@@ -333,10 +338,17 @@ export default function App() {
       const p = stage.pick(e.clientX, e.clientY);
       if (!p) return;
       const last = stroke[stroke.length - 1];
-      if (!last || Math.hypot(p.u - last.u, p.v - last.v) > 6 / 768) {
+      if (last && Math.hypot(p.u - last.u, p.v - last.v) > 6 / 768) {
         stroke.push({ u: p.u, v: p.v });
         if (t === "match") {
-          sim.stamp(3, [stroke[stroke.length - 1]!], 4);
+          // densify so the scored line is continuous, not dotted
+          const dense: { u: number; v: number }[] = [];
+          const d = Math.hypot(p.u - last.u, p.v - last.v);
+          const steps = Math.max(1, Math.ceil(d / (2 / 768)));
+          for (let k = 1; k <= steps; k++) {
+            dense.push({ u: last.u + (p.u - last.u) * (k / steps), v: last.v + (p.v - last.v) * (k / steps) });
+          }
+          sim.stamp(3, dense, 3);
           fx.sputter(p.u, p.v);
         }
       }
@@ -379,20 +391,47 @@ export default function App() {
     canvas.addEventListener("pointermove", move, true);
     canvas.addEventListener("pointerup", upEvt, true);
     canvas.addEventListener("pointercancel", upEvt, true);
-    canvas.addEventListener("pointerleave", () => setHoverTag(null));
+    const leave = () => setHoverTag(null);
+    canvas.addEventListener("pointerleave", leave);
     return () => {
       canvas.removeEventListener("pointerdown", down, true);
       canvas.removeEventListener("pointermove", move, true);
       canvas.removeEventListener("pointerup", upEvt, true);
       canvas.removeEventListener("pointercancel", upEvt, true);
+      canvas.removeEventListener("pointerleave", leave);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
-  // keyboard shortcuts
+  // keyboard: tool shortcuts + a real paint path (Enter paints at frame center)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).tagName === "INPUT") return;
+      const sheetsOpen = shareOpen || placesOpen;
+      const onCanvas = e.target === document.body || e.target instanceof HTMLCanvasElement;
+      if ((e.key === "Enter" || e.key === " ") && !sheetsOpen && onCanvas && readyRef.current) {
+        const r = readyRef.current;
+        const t = toolRef.current;
+        if (t !== "orbit") {
+          e.preventDefault();
+          const c = { u: 0.5, v: 0.5 }; // the heart of the frame
+          if (t === "match") {
+            r.sim.stamp(0, [c], 11);
+            const rect = r.stage.renderer.domElement.getBoundingClientRect();
+            const hit = r.stage.pick(rect.width / 2, rect.height / 2);
+            if (hit) {
+              r.fx.flareAt(hit.point);
+              r.stage.nudgeFocus(hit.point);
+            }
+            struckOnce.current = true;
+            haptics.current.trigger("nudge").catch(() => {});
+          } else if (t === "break") r.sim.stamp(1, [c], 14);
+          else r.sim.stamp(2, [c], 70);
+          setTool("orbit");
+          return;
+        }
+      }
+      if (sheetsOpen) return;
       const map: Record<string, Tool> = { "1": "orbit", "2": "match", "3": "break", "4": "rain", o: "orbit", m: "match", b: "break", r: "rain" };
       const t = map[e.key];
       if (t) setTool(t);
@@ -403,7 +442,7 @@ export default function App() {
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, []);
+  }, [shareOpen, placesOpen]);
 
   const toggleBurns = () => {
     const r = readyRef.current;
@@ -411,6 +450,26 @@ export default function App() {
     const next = !burnsOn;
     setBurnsOn(next);
     r.stage.hotspotShow = next;
+    if (next && !hotspots) {
+      // lazy: the satellite pass only runs when someone looks
+      const p = placeRef.current;
+      const pk = `${p.lat.toFixed(4)},${p.lon.toFixed(4)}`;
+      fetchHotspots(p)
+        .then((h) => {
+          burnsCache.current.set(pk, h.points);
+          setHotspots(h.points);
+          r.stage.setHotspots(h.points);
+        })
+        .catch(() => setHotspots([]));
+    }
+  };
+
+  const toggleSound = () => {
+    const next = !soundOn;
+    setSoundOn(next);
+    const c = crackleRef.current;
+    if (next) c.start();
+    else c.stop();
   };
 
   if (err) {
@@ -429,7 +488,14 @@ export default function App() {
 
   return (
     <>
-      <canvas ref={canvasRef} className="stage" data-tool={tool} />
+      <canvas
+        ref={canvasRef}
+        className="stage"
+        data-tool={tool}
+        role="application"
+        aria-label="Wildfire field — drag to paint, use 1–4 to pick a tool, Enter paints at the center of view"
+        tabIndex={0}
+      />
       {!ready && (
         <div className="loading">
           <div className="card">
@@ -513,7 +579,7 @@ export default function App() {
             </button>
             <button
               className={`lever ${soundOn ? "on" : ""}`}
-              onClick={() => setSoundOn((s) => !s)}
+              onClick={toggleSound}
               aria-pressed={soundOn}
               title="the fire, heard"
             >
@@ -575,6 +641,7 @@ export default function App() {
           {offline && (
             <div className="offline">no connection — the wind is a memory</div>
           )}
+          {notice && <div className="offline">{notice}</div>}
 
           {switching && (
             <div className="switching">

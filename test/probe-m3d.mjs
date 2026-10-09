@@ -25,7 +25,6 @@ const aniso = await page.evaluate(() => {
   const seen = { dn: 0, up: 0 };
   for (let i = -140; i <= 140; i += 4) {
     // +x east, +y north in scene = (du, dv) with v down => north is -v
-    const du = i / 768, dv_windward = (i * wind.y) / 768;
     const cD = window.__yesca.cell(0.5 + (i / 768) * wind.x, 0.5 - (i / 768) * wind.y);
     const cU = window.__yesca.cell(0.5 - (i / 768) * wind.x, 0.5 + (i / 768) * wind.y);
     if (cD[0] > 0.5) { seen.dn = Math.abs(i); downwind = Math.max(downwind, Math.abs(i)); }

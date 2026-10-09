@@ -19,13 +19,17 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture }:
   const ref = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
   const [img, setImg] = useState<string | null>(null);
+  // latest props for the one-shot capture; the effect must not re-run on every tick
+  const latest = useRef({ onClose, place, weather, burntKm2, capture });
+  latest.current = { onClose, place, weather, burntKm2, capture };
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && latest.current.onClose();
     addEventListener("keydown", onKey);
     const ctx = ref.current?.getContext("2d");
     if (!ref.current || !ctx) return () => removeEventListener("keydown", onKey);
+    const { place: pl, weather: wx, burntKm2: burnt, capture } = latest.current;
     const src = capture();
     ctx.fillStyle = "#0d0c0a";
     ctx.fillRect(0, 0, W, H);
@@ -45,7 +49,7 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture }:
     ctx.strokeRect(28.5, 28.5, W - 57, H - 57);
     ctx.fillStyle = "#e9e1ce";
     ctx.textBaseline = "alphabetic";
-    const placeName = place.name ?? "somewhere real";
+    const placeName = pl.name ?? "somewhere real";
     // wordmark
     ctx.font = "italic 300 44px Spectral, serif";
     ctx.fillText("yesca", 56, H - 118);
@@ -55,7 +59,7 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture }:
     ctx.font = "300 14px 'IBM Plex Mono', monospace";
     ctx.fillStyle = "rgba(233,225,206,0.6)";
     ctx.fillText(
-      `${place.lat.toFixed(4)}°, ${place.lon.toFixed(4)}°  ·  wind ${Math.round(weather.windKmh)} km/h ${compass(weather.windDeg)}  ·  burnt ${burntKm2.toFixed(1)} km²`,
+      `${pl.lat.toFixed(4)}°, ${pl.lon.toFixed(4)}°  ·  wind ${Math.round(wx.windKmh)} km/h ${compass(wx.windDeg)}  ·  burnt ${burnt.toFixed(1)} km²`,
       56,
       H - 50,
     );
@@ -66,7 +70,7 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture }:
     ctx.textAlign = "left";
     setImg(ref.current.toDataURL("image/png"));
     return () => removeEventListener("keydown", onKey);
-  }, [open, place, weather, burntKm2, capture, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return (

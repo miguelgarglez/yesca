@@ -15,8 +15,12 @@ export class Crackle {
   }
 
   start() {
-    if (this.ctx) return;
+    if (this.ctx) {
+      void this.ctx.resume();
+      return;
+    }
     const ctx = new AudioContext();
+    void ctx.resume();
     this.ctx = ctx;
     const len = ctx.sampleRate * 2;
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
