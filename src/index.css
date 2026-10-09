@@ -103,7 +103,7 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   padding: 18px 22px;
   pointer-events: none;
   z-index: 20;
-  animation: hud-in 700ms var(--ease-out) 150ms both;
+  animation: hud-in 700ms var(--ease-out) 150ms backwards;
 }
 @keyframes hud-in {
   from { opacity: 0; transform: translateY(6px); }
@@ -130,7 +130,8 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   font-family: "IBM Plex Mono", monospace;
   pointer-events: none;
   z-index: 15;
-  animation: hud-in 700ms var(--ease-out) 500ms both;
+  animation: hud-in 700ms var(--ease-out) 500ms backwards;
+  transition: opacity 300ms var(--ease-out);
 }
 .inst .v {
   font-size: 17px; font-weight: 400; color: var(--bone);
@@ -145,13 +146,13 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
 
 /* the contextual share chip — it only surfaces once there is a scar to press */
 .sharechip {
-  position: fixed; left: 22px; bottom: 84px; z-index: 16;
+  position: fixed; left: 22px; bottom: 116px; z-index: 16;
   font-family: "Spectral", serif; font-style: italic; font-size: 13px;
   color: var(--hot); background: rgba(255, 90, 31, 0.12);
   border: 1px solid rgba(255, 90, 31, 0.4);
   border-radius: 999px; padding: 7px 15px; cursor: pointer;
   backdrop-filter: blur(10px);
-  animation: chip-in 420ms var(--ease-spring) both;
+  animation: chip-in 420ms var(--ease-spring) backwards;
   transition: background 200ms var(--ease-out), transform 160ms var(--ease-out);
 }
 .sharechip:hover { background: rgba(255, 90, 31, 0.2); transform: translateY(-1px); }
@@ -178,11 +179,12 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
 /* ---------- rail: instrument switches ---------- */
 
 .rail {
-  position: fixed; right: 22px; bottom: 18px;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 7px;
+  /* levers join the instruments — one bottom-left cluster, not two corners */
+  position: fixed; left: 22px; bottom: 78px;
+  display: flex; flex-direction: row; align-items: center; gap: 16px;
   font-family: "IBM Plex Mono", monospace;
   z-index: 15;
-  animation: hud-in 700ms var(--ease-out) 650ms both;
+  animation: hud-in 700ms var(--ease-out) 650ms backwards;
 }
 .lever {
   display: flex; align-items: center; gap: 9px;
@@ -233,7 +235,7 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   backdrop-filter: blur(14px);
   pointer-events: auto;
   z-index: 15;
-  animation: hud-in-c 700ms var(--ease-out) 300ms both;
+  animation: hud-in-c 700ms var(--ease-out) 300ms backwards;
 }
 @keyframes hud-in-c {
   from { opacity: 0; transform: translateX(-50%) translateY(6px); }
@@ -251,8 +253,8 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   font-size: 17px; color: var(--bone); line-height: 1.1;
 }
 .dock-brand span {
-  font-family: "IBM Plex Mono", monospace; font-size: 7.5px;
-  letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.5;
+  font-family: "IBM Plex Mono", monospace; font-size: 10px;
+  letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.5;
   white-space: nowrap;
 }
 .tbtn {
@@ -285,41 +287,47 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
 /* ---------- guide: a strip engraved on the dock's top edge ---------- */
 
 .guide {
-  position: fixed; left: 50%; bottom: 82px; transform: translateX(-50%);
+  position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%);
   z-index: 30; pointer-events: auto;
   display: flex; align-items: baseline; gap: 12px;
-  padding: 9px 16px;
-  background: rgba(13, 12, 10, 0.68);
-  border: 1px solid rgba(232, 181, 99, 0.18);
-  border-radius: 999px;
-  backdrop-filter: blur(12px);
-  animation: guide-in 420ms var(--ease-spring) both;
+  padding: 0 4px 10px;
+  /* engraved strip: bare text over the terrain, a single ember rule below */
+  animation: guide-in 420ms var(--ease-spring) backwards;
   white-space: nowrap;
-  max-width: min(92vw, 520px);
+  max-width: min(92vw, 560px);
+}
+.guide::after {
+  content: ""; position: absolute; left: 8px; right: 8px; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 90, 31, 0.75), rgba(232, 181, 99, 0.5), transparent);
 }
 @keyframes guide-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(8px) scale(0.97); }
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
   to { opacity: 1; transform: translateX(-50%); }
 }
 .g-k {
   font-family: "IBM Plex Mono", monospace; font-size: 10px;
   letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--amber); opacity: 0.9;
+  color: var(--ember);
+  text-shadow: 0 2px 14px rgba(0,0,0,0.9);
 }
 .g-line {
   font-family: "Spectral", serif; font-style: italic; font-weight: 300;
-  font-size: 15px; line-height: 1.4; color: var(--bone);
+  font-size: 16px; line-height: 1.4; color: var(--bone);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 2px 22px rgba(0,0,0,0.95);
 }
 .g-dots { display: inline-flex; gap: 5px; align-self: center; }
 .g-dots i {
   width: 4px; height: 4px; border-radius: 50%;
-  background: rgba(233,225,206,0.22);
+  background: rgba(233,225,206,0.28);
+  box-shadow: 0 1px 6px rgba(0,0,0,0.8);
 }
 .g-dots i.on { background: var(--ember); }
 .g-skip {
   background: none; border: none; cursor: pointer;
-  font-size: 14px; line-height: 1;
-  color: var(--bone); opacity: 0.4; padding: 2px 4px;
+  font-size: 15px; line-height: 1;
+  color: var(--bone); opacity: 0.5; padding: 2px 4px;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.9);
   transition: opacity 160ms var(--ease-out);
 }
 .g-skip:hover { opacity: 0.9; }
@@ -449,25 +457,27 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
 }
 @keyframes fade-in { from { opacity: 0; } }
 .sheet {
-  background: rgba(21, 19, 15, 0.95);
-  border: 1px solid rgba(233,225,206,0.14);
-  border-radius: 18px;
-  padding: 14px;
-  max-width: min(92vw, 720px);
-  transform-origin: 14% 96%; /* grows from the share chip's corner */
-  animation: sheet-in 380ms var(--ease-spring) both;
-  box-shadow: 0 20px 80px rgba(0,0,0,0.6);
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  width: min(88vw, 620px);
+  transform-origin: bottom left; /* grows out of the chip that summoned it */
+  animation: sheet-in 380ms var(--ease-spring) backwards;
 }
 @keyframes sheet-in {
-  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  from { opacity: 0; transform: translateY(14px) scale(0.96) rotate(-0.6deg); }
   to { opacity: 1; transform: none; }
 }
 .sheet canvas {
-  width: 100%; height: auto; display: block; border-radius: 10px;
+  width: 100%; height: auto; display: block;
+  /* a scorched polaroid, not a certificate — irregular softened corners */
+  border-radius: 4px 22px 6px 26px;
+  box-shadow: 0 24px 90px rgba(0,0,0,0.7), 0 0 0 1px rgba(233,225,206,0.08);
 }
 .sheet-row {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 4px 2px;
+  padding: 12px 6px 2px;
 }
 .sheet-cap {
   font-family: "Spectral", serif; font-style: italic; font-size: 14px;
@@ -501,14 +511,14 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   .vane { width: 36px; height: 36px; }
   .vane .needle { height: 14px; }
   .rail {
-    right: 16px; bottom: auto; top: 60px; gap: 6px;
+    left: 16px; right: auto; bottom: 148px; top: auto; gap: 14px;
   }
-  .sharechip { left: 16px; bottom: 150px; }
+  .sharechip { left: 16px; bottom: 186px; }
   .tray { bottom: 14px; padding: 6px 10px 6px 12px; }
   .dock-brand span { display: none; }
   .tbtn { width: 44px; height: 44px; }
   .toolname { display: none; }
-  .guide { bottom: 78px; white-space: normal; max-width: 88vw; }
+  .guide { bottom: 84px; white-space: normal; max-width: 88vw; }
   .placetray { top: 56px; right: 16px; left: 16px; width: auto; }
 }
 

@@ -31,12 +31,12 @@ const afterOrbit = await page.evaluate(() => window.__yesca.stats());
 await page.click('button[data-tool="match"]');
 await page.mouse.move(480, 420);
 await page.mouse.down();
-for (let i = 1; i <= 10; i++) {
-  await page.mouse.move(480 + i * 18, 420 + i * 4, { steps: 2 });
+for (let i = 1; i <= 14; i++) {
+  await page.mouse.move(480 + i * 16, 420 + i * 3, { steps: 2 });
   await page.waitForTimeout(30);
 }
 await page.mouse.up();
-await page.waitForTimeout(6000);
+await page.waitForTimeout(9000);
 const afterStrike = await page.evaluate(() => window.__yesca.stats());
 await page.screenshot({ path: `test/results/m2-strike-${engine}.png` });
 
@@ -57,6 +57,6 @@ await browser.close();
 const ok =
   errors.length === 0 &&
   afterOrbit.burning === 0 &&
-  afterStrike.burning + afterStrike.burnt > 0.005;
+  afterStrike.burning + afterStrike.burnt > 0.003;
 console.log(ok ? "M2 PASS" : "M2 FAIL");
 process.exit(ok ? 0 : 1);

@@ -150,6 +150,7 @@ export class Stage {
         uPixelScale: { value: 1 },
         uShow: { value: 0 },
         uTime: { value: 0 },
+        uBorn: { value: 0 },
       },
     });
     this.hotspotPoints = new THREE.Points(new THREE.BufferGeometry(), this.hotspotMat);
@@ -163,6 +164,7 @@ export class Stage {
   }
 
   hotspotShow: boolean;
+  private hotspotBorn = 0;
 
   private buildGeometry(terrain: TerrainField): THREE.BufferGeometry {
     const seg = 384;
@@ -286,6 +288,7 @@ export class Stage {
     geo.setAttribute("aConf", new THREE.BufferAttribute(conf, 1));
     this.hotspotPoints.geometry.dispose();
     this.hotspotPoints.geometry = geo;
+    this.hotspotBorn = performance.now() / 1000;
   }
 
   /** camera eases toward a point on the relief, then relaxes back */
@@ -432,6 +435,10 @@ export class Stage {
     const show = this.hotspotMat.uniforms.uShow!;
     show.value += ((this.hotspotShow ? 1 : 0) - show.value) * Math.min(1, dt * 6);
     this.hotspotMat.uniforms.uTime!.value = time;
+    this.hotspotMat.uniforms.uBorn!.value = Math.min(
+      2,
+      Math.max(0, performance.now() / 1000 - this.hotspotBorn),
+    );
     this.hotspotMat.uniforms.uPixelScale!.value =
       this.renderer.domElement.height / 900;
     this.hotspotPoints.visible = show.value > 0.01;

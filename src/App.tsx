@@ -84,6 +84,7 @@ export default function App() {
   const [hotspots, setHotspots] = useState<Hotspot[] | null>(null);
   const [soundOn, setSoundOn] = useState(() => localStorage.getItem("yesca.sound") === "1");
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareAnchor, setShareAnchor] = useState<{ x: number; y: number } | null>(null);
   const [placesOpen, setPlacesOpen] = useState(false);
   const [burntKm2, setBurntKm2] = useState(0);
   const [hoverTag, setHoverTag] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -308,7 +309,8 @@ export default function App() {
       active = true;
       stroke = [{ u: p.u, v: p.v }];
       if (t === "match") {
-        sim.stamp(3, stroke, 3);
+        sim.stamp(3, stroke, 5);
+        fx.strike(stroke, sim.wind); // first-contact spark — light and sound agree
       } else if (t === "rain") {
         sim.stamp(2, stroke, 30, 0.9);
         fx.rain(p.u, p.v);
@@ -351,7 +353,7 @@ export default function App() {
           for (let k = 1; k <= steps; k++) {
             dense.push({ u: last.u + (p.u - last.u) * (k / steps), v: last.v + (p.v - last.v) * (k / steps) });
           }
-          sim.stamp(3, dense, 3);
+          sim.stamp(3, dense, 5);
           fx.sputter(p.u, p.v);
         }
       }
@@ -381,10 +383,10 @@ export default function App() {
             if (c[0]! >= 1.5 && c[2]! > 0) {
               const ago = Math.max(1, Math.round((sim.time - c[2]!) / 60));
               setHoverTag({ x: e.clientX, y: e.clientY, text: `burned ${ago} min ago` });
-              setTimeout(() => setHoverTag(null), 2400);
+              setTimeout(() => setHoverTag(null), 3600);
             } else if (c[0]! > 0.5) {
               setHoverTag({ x: e.clientX, y: e.clientY, text: "burning" });
-              setTimeout(() => setHoverTag(null), 1600);
+              setTimeout(() => setHoverTag(null), 2400);
             }
           }
         }
@@ -635,7 +637,9 @@ export default function App() {
           {burntKm2 > 0.004 && !shareOpen && (
             <button
               className="sharechip"
-              onClick={() => {
+              onClick={(e) => {
+                const r0 = e.currentTarget.getBoundingClientRect();
+                setShareAnchor({ x: r0.left, y: r0.top });
                 setShareOpen(true);
                 haptics.current.trigger("nudge").catch(() => {});
               }}
@@ -710,6 +714,7 @@ export default function App() {
           <ShareSheet
             open={shareOpen}
             onClose={() => setShareOpen(false)}
+            anchor={shareAnchor}
             place={place}
             weather={weather}
             burntKm2={burntKm2}

@@ -70,8 +70,10 @@ await page.screenshot({ path: "/tmp/y-m3-la.png" });
 const hash = await page.evaluate(() => location.hash);
 console.log("hash:", hash);
 
-// share sheet
-await page.click('button.lever:has-text("share")');
+// share sheet — the chip only exists once the hillside is scarred
+await page.evaluate(() => window.__yesca.ignite(0.5, 0.5));
+await page.waitForTimeout(9000);
+await page.click(".sharechip");
 await page.waitForTimeout(1200);
 await page.screenshot({ path: "/tmp/y-m3-share.png" });
 await page.keyboard.press("Escape");

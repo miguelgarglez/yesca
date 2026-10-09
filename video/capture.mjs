@@ -21,6 +21,7 @@ async function clip(name, fn, { guide = false } = {}) {
   await page.waitForFunction(() => window.__yesca, { timeout: 45000 });
   await fn(page);
   await ctx.close(); // closing flushes the webm
+  await page.video().saveAs(`${OUT}/${name}.webm`); // finalizes after close
   console.log("captured", name);
 }
 

@@ -33,7 +33,9 @@ uniform float uSpotDist;    // ember spotting distance in px
 uniform float uSpotProb;    // per-tick spotting chance
 
 float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 
 void main() {
@@ -199,7 +201,11 @@ uniform vec3 uEmber;
 uniform vec3 uHot;
 uniform vec3 uAsh;
 
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float hash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
@@ -237,7 +243,7 @@ void main() {
   // match scratch: a dark groove scored into the land, glinting like struck flint
   float scratch = clamp(fu.b, 0.0, 1.0);
   vec3 ground = mix(col, uChar * 0.6, scratch * 0.62);
-  ground += uEmber * scratch * vnoise(vUv * 900.0 + uTime * 2.2) * 0.22;
+  ground += uEmber * scratch * vnoise(vUv * 260.0 + uTime * 2.2) * 0.34;
   col = ground;
 
   // burn states — feathered rim via neighbourhood taps, not a sawtooth edge
@@ -259,10 +265,10 @@ void main() {
     col += uEmber * (ember * 0.6 + exp(-max(age, 0.0) * 0.7) * 0.55 * mask);
   } else if (st.r > 0.5) {
     // burning: dim ember body, incandescent only where intensity peaks
-    float i = st.g * (0.7 + 0.6 * vnoise(vUv * 110.0 + uTime * 0.4));
+    float i = st.g * (0.7 + 0.6 * vnoise(vUv * 70.0 + uTime * 0.4));
     vec3 c = mix(uChar * 0.55, uEmber, clamp(i * 1.05, 0.0, 1.0));
     c = mix(c, uHot, smoothstep(0.95, 1.3, i));
-    float lick = vnoise(vUv * 700.0 + vec2(0.0, -uTime * 3.0));
+    float lick = vnoise(vUv * 320.0 + vec2(0.0, -uTime * 3.4));
     col = c * (0.3 + 0.75 * i) * (1.0 + 0.5 * lick * i);
   }
   // soft halo around active fire — blur-sample the intensity field
@@ -282,9 +288,10 @@ void main() {
   col = mix(col, col * vec3(0.82, 0.9, 1.06), clamp(fu.g - 0.45, 0.0, 1.0) * 0.7);
 
   // slow cloud shadows crossing the slope — the light itself is alive
-  float cloud = vnoise(vUv * 2.4 + vec2(uTime * 0.016, uTime * 0.011))
-              + 0.5 * vnoise(vUv * 5.1 + vec2(-uTime * 0.022, uTime * 0.014));
-  col *= 0.86 + 0.14 * smoothstep(0.1, 0.9, cloud * 0.66);
+  // slow cloud shadows crossing the slope — broad patches, not grain
+  float cloud = vnoise(vUv * 0.62 + vec2(uTime * 0.011, uTime * 0.007))
+              + 0.5 * vnoise(vUv * 1.35 + vec2(-uTime * 0.016, uTime * 0.010));
+  col *= 0.8 + 0.2 * smoothstep(0.28, 0.78, cloud * 0.66);
 
   // table edge fade
   float edge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
@@ -311,7 +318,11 @@ uniform sampler2D uSmoke;
 uniform float uTime;
 uniform vec3 uSmokeCol;
 
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float hash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
@@ -430,6 +441,7 @@ in float aConf;
 uniform float uPixelScale;
 uniform float uShow;
 uniform float uTime;
+uniform float uBorn; // seconds since the set was laid down — the reveal beat
 out float vConf;
 out float vPhase;
 out float vShow;
@@ -441,7 +453,10 @@ void main() {
   // hide by moving off the frustum — never multiply position by the fade
   gl_Position = uShow > 0.003 ? projectionMatrix * mv : vec4(2.0, 2.0, 2.0, 1.0);
   float pulse = 1.0 + 0.3 * sin(uTime * 2.4 + vPhase);
-  gl_PointSize = uShow * 19.0 * pulse * uPixelScale / max(1.0, -mv.z / 900.0);
+  // each beacon rises slightly late by confidence, overshoots, then settles
+  float rise = clamp(uBorn * 2.2 - fract(aConf * 5.31) * 0.35, 0.0, 1.0);
+  float pop = rise * (1.0 + 1.4 * sin(rise * 3.14159));
+  gl_PointSize = uShow * 19.0 * pulse * pop * uPixelScale / max(1.0, -mv.z / 900.0);
 }
 `;
 
