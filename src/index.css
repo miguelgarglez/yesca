@@ -553,7 +553,9 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
 
 @media (prefers-reduced-motion: reduce) {
   .guide, .placetray, .sheet, .sheet-back, .offline, .hoverchip, .loading .bar i,
-  .sharechip, .masthead, .instruments, .rail, .tray, .toolflash {
+  .sharechip, .masthead, .instruments, .rail, .tray, .toolflash,
+  body.revealed .masthead, body.revealed .instruments,
+  body.revealed .rail, body.revealed .tray {
     animation-duration: 1ms; animation-delay: 0ms;
   }
   .vane .needle { transition-duration: 200ms; }

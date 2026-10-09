@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { TextMorph } from "torph/react";
 import { compass, type Place, type Weather } from "../lib/domain";
 
 interface Props {
@@ -92,10 +93,13 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
   }, [open]);
 
   if (!open) return null;
-  const anchored =
-    anchor && window.innerWidth > 700
-      ? { left: anchor.x, bottom: window.innerHeight - anchor.y + 14 }
-      : undefined;
+  const anchored = anchor
+    ? {
+        // grow from the chip everywhere — on narrow screens clamp inside the viewport
+        left: Math.max(12, Math.min(anchor.x, window.innerWidth - Math.min(window.innerWidth * 0.88, 620) - 12)),
+        bottom: window.innerHeight - anchor.y + 14,
+      }
+    : undefined;
   return (
     <div className="sheet-back" onClick={onClose}>
       <div
@@ -116,7 +120,7 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
                 setTimeout(() => setCopied(false), 1600);
               }}
             >
-              {copied ? "word sent" : "send word"}
+              <TextMorph>{copied ? "word sent" : "send word"}</TextMorph>
             </button>
             {img && (
               <a href={img} download={`yesca-${place.name?.replace(/\W+/g, "-").toLowerCase() ?? "hillside"}.png`}>

@@ -107,9 +107,12 @@ export default function App() {
   const struckOnce = useRef(false);
   const brokeOnce = useRef(false);
   const reduced = useRef(prefersReducedMotion());
-  // haptics are motion too — the reduced-motion guard is the opt-out
+  const canBuzz = useRef(typeof navigator !== "undefined" && "vibrate" in navigator);
+  const buzzRef = useRef(true); // ref, not state — stable handlers close over it
+  const [buzzOn, setBuzzOn] = useState(true);
+  // haptics are motion too — the reduced-motion guard and the nudge lever both opt out
   const nudge = () => {
-    if (reduced.current) return;
+    if (reduced.current || !buzzRef.current) return;
     haptics.current.trigger("nudge").catch(() => {});
   };
   const rainDamp = useRef(0);
@@ -280,10 +283,12 @@ export default function App() {
       if (!r) return;
       const orbitDone = r.stage.orbitAccum > 0.5;
       const struckDone = struckOnce.current;
-      if (guideStep === "orbit" && (orbitDone || struckDone)) {
-        setGuideStep(struckDone ? "break" : "strike");
+      if (guideStep === "orbit" && orbitDone) {
+        setGuideStep("strike");
+        setTool("match");
       } else if (guideStep === "strike" && struckDone) {
         setGuideStep("break");
+        setTool("break");
       } else if (guideStep === "break" && brokeOnce.current) {
         finishGuide();
       }
@@ -466,7 +471,7 @@ export default function App() {
       if ((e.key === "Enter" || e.key === " ") && !sheetsOpen && onCanvas && readyRef.current) {
         const r = readyRef.current;
         const t = toolRef.current;
-        if (t !== "orbit") {
+        if (t !== "orbit" && guideStepRef.current !== "orbit") {
           e.preventDefault();
           const c = { u: 0.5, v: 0.5 }; // the heart of the frame
           if (t === "match") {
@@ -568,7 +573,7 @@ export default function App() {
       <canvas
         ref={canvasRef}
         className="stage"
-        data-tool={tool}
+        data-tool={guideStep === "orbit" ? "orbit" : tool}
         role="application"
         aria-label="Wildfire field — drag to paint, use 1–4 to pick a tool, Enter paints at the center of view"
         tabIndex={0}
@@ -659,6 +664,21 @@ export default function App() {
               <span className="lbl">crackle</span>
               <i className="sw" />
             </button>
+            {canBuzz.current && (
+              <button
+                className={`lever ${buzzOn ? "on" : ""}`}
+                onClick={() => {
+                  buzzRef.current = !buzzRef.current;
+                  setBuzzOn(buzzRef.current);
+                  if (buzzRef.current && !reduced.current) haptics.current.trigger("nudge").catch(() => {});
+                }}
+                aria-pressed={buzzOn}
+                title="the land answers in your hand"
+              >
+                <span className="lbl">nudge</span>
+                <i className="sw" />
+              </button>
+            )}
           </div>
 
           {burntKm2 > 0.004 && !shareOpen && guideStep === "done" && (

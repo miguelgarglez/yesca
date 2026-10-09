@@ -281,9 +281,13 @@ void main() {
   halo += texture(uState, fuv - vec2(uTexel.x * 7.0, uTexel.y * 7.0)).g;
   halo += texture(uState, fuv + vec2(uTexel.x * 7.0, -uTexel.y * 7.0)).g;
   halo += texture(uState, fuv - vec2(uTexel.x * 7.0, -uTexel.y * 7.0)).g;
-  float burnHalo = halo * 0.125;
+  halo += texture(uState, fuv + vec2(uTexel.x * 13.0, uTexel.y * 13.0)).g;
+  halo += texture(uState, fuv - vec2(uTexel.x * 13.0, uTexel.y * 13.0)).g;
+  halo += texture(uState, fuv + vec2(uTexel.x * 13.0, -uTexel.y * 13.0)).g;
+  halo += texture(uState, fuv - vec2(uTexel.x * 13.0, -uTexel.y * 13.0)).g;
+  float burnHalo = halo * 0.105;
   // the fire throws warmth back onto the unburned slope
-  col += uEmber * burnHalo * (0.45 + 0.35 * dif);
+  col += uEmber * burnHalo * (0.55 + 0.4 * dif);
 
   // wet sheen
   col = mix(col, col * vec3(0.82, 0.9, 1.06), clamp(fu.g - 0.45, 0.0, 1.0) * 0.7);
