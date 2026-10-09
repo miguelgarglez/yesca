@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { FIELD_SIZE, type TerrainField } from "../lib/domain";
 import type { Sim } from "./Sim";
 import {
+  HOTSPOT_FRAG,
+  HOTSPOT_VERT,
   SMOKE_DRAW_FRAG,
   SMOKE_VERT,
   TERRAIN_FRAG,
@@ -31,7 +33,7 @@ export interface PickResult {
 
 /**
  * The scene: a real-relief terrain slab on a dark table, smoke layer,
- * and an inertial orbit rig tuned by hand.
+ * hotspot markers, and an inertial orbit rig tuned by hand.
  */
 export class Stage {
   renderer: THREE.WebGLRenderer;
@@ -43,6 +45,13 @@ export class Stage {
   terrainMat: THREE.ShaderMaterial;
   smokeMesh: THREE.Mesh;
   smokeMat: THREE.ShaderMaterial;
+  hotspotPoints: THREE.Points;
+  hotspotMat: THREE.ShaderMaterial;
+
+  /** gate callback: App decides whether a press may orbit (tool/terrain) */
+  orbitGate: (e: PointerEvent) => boolean = () => true;
+  /** counts real orbiting for the guide */
+  orbitAccum = 0;
 
   // orbit rig state
   theta = -0.62;
@@ -58,29 +67,104 @@ export class Stage {
   private pinchD = 0;
   private raycaster = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
+  private focusPt = new THREE.Vector3();
+  private focusT = 0;
+  private effTarget = new THREE.Vector3();
 
   sceneMeters: number;
   heightScale: number;
   lastInput = 0;
   revealT = 0;
+  revealSpeed = 1.8;
+  idleDrift = true;
+  terrain: TerrainField;
 
   constructor(canvas: HTMLCanvasElement, terrain: TerrainField) {
     this.canvas = canvas;
+    this.terrain = terrain;
     this.sceneMeters = terrain.size * terrain.metersPerPx;
-    this.heightScale = terrain.metersPerPx * EXAG * (terrain.maxH - terrain.minH) / Math.max(1, terrain.maxH - terrain.minH);
-    // normalized-height units -> meters: h01 * (maxH-minH) * EXAG
     this.heightScale = (terrain.maxH - terrain.minH) * EXAG;
-    this.radius = this.sceneMeters * 0.72;
+    this.radius = this.sceneMeters * 0.98;
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
       powerPreference: "high-performance",
+      preserveDrawingBuffer: true,
     });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.scene.background = new THREE.Color(PALETTE.void);
-    this.scene.fog = new THREE.Fog(PALETTE.void, this.sceneMeters * 0.9, this.sceneMeters * 2.6);
+    this.scene.fog = new THREE.Fog(PALETTE.void, this.sceneMeters * 1.1, this.sceneMeters * 3.0);
 
+    this.terrainMat = new THREE.ShaderMaterial({
+      vertexShader: TERRAIN_VERT,
+      fragmentShader: TERRAIN_FRAG,
+      glslVersion: THREE.GLSL3,
+      uniforms: {
+        uHeight: { value: null },
+        uState: { value: null },
+        uFuel: { value: null },
+        uTexel: { value: new THREE.Vector2(1 / FIELD_SIZE, 1 / FIELD_SIZE) },
+        uGradScale: {
+          value: ((terrain.maxH - terrain.minH) * EXAG) / terrain.metersPerPx,
+        },
+        uTime: { value: 0 },
+        uReveal: { value: 0 },
+        uLo: { value: new THREE.Color(PALETTE.lo) },
+        uHi: { value: new THREE.Color(PALETTE.hi) },
+        uChar: { value: new THREE.Color(PALETTE.char) },
+        uEmber: { value: new THREE.Color(PALETTE.ember) },
+        uHot: { value: new THREE.Color(PALETTE.hot) },
+        uAsh: { value: new THREE.Color(PALETTE.ash) },
+      },
+    });
+    this.terrainMesh = new THREE.Mesh(this.buildGeometry(terrain), this.terrainMat);
+    this.scene.add(this.terrainMesh);
+
+    const smokeGeo = this.terrainMesh.geometry.clone();
+    const sp = smokeGeo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < sp.count; i++) sp.setY(i, sp.getY(i) + this.sceneMeters * 0.02);
+    this.smokeMat = new THREE.ShaderMaterial({
+      vertexShader: SMOKE_VERT,
+      fragmentShader: SMOKE_DRAW_FRAG,
+      glslVersion: THREE.GLSL3,
+      transparent: true,
+      depthWrite: false,
+      uniforms: {
+        uSmoke: { value: null },
+        uTime: { value: 0 },
+        uSmokeCol: { value: new THREE.Color(PALETTE.smoke) },
+      },
+    });
+    this.smokeMesh = new THREE.Mesh(smokeGeo, this.smokeMat);
+    this.smokeMesh.renderOrder = 2;
+    this.scene.add(this.smokeMesh);
+
+    this.hotspotMat = new THREE.ShaderMaterial({
+      vertexShader: HOTSPOT_VERT,
+      fragmentShader: HOTSPOT_FRAG,
+      glslVersion: THREE.GLSL3,
+      transparent: true,
+      depthWrite: false,
+      uniforms: {
+        uPixelScale: { value: 1 },
+        uShow: { value: 0 },
+        uTime: { value: 0 },
+      },
+    });
+    this.hotspotPoints = new THREE.Points(new THREE.BufferGeometry(), this.hotspotMat);
+    this.hotspotPoints.renderOrder = 3;
+    this.hotspotPoints.frustumCulled = false;
+    this.hotspotShow = false;
+    this.scene.add(this.hotspotPoints);
+
+    this.target.set(0, (terrain.maxH - terrain.minH) * EXAG * 0.35, 0);
+    this.bindPointer();
+  }
+
+  hotspotShow: boolean;
+
+  private buildGeometry(terrain: TerrainField): THREE.BufferGeometry {
     const seg = 384;
     const geo = new THREE.PlaneGeometry(this.sceneMeters, this.sceneMeters, seg, seg);
     geo.rotateX(-Math.PI / 2);
@@ -107,54 +191,63 @@ export class Stage {
       pos.setY(i, (h - terrain.minH) * EXAG);
     }
     geo.computeVertexNormals();
+    return geo;
+  }
 
-    const texel = new THREE.Vector2(1 / FIELD_SIZE, 1 / FIELD_SIZE);
-    this.terrainMat = new THREE.ShaderMaterial({
-      vertexShader: TERRAIN_VERT,
-      fragmentShader: TERRAIN_FRAG,
-      glslVersion: THREE.GLSL3,
-      uniforms: {
-        uHeight: { value: null },
-        uState: { value: null },
-        uFuel: { value: null },
-        uTexel: { value: texel },
-        uGradScale: {
-          value: ((terrain.maxH - terrain.minH) * EXAG) / terrain.metersPerPx,
-        },
-        uTime: { value: 0 },
-        uReveal: { value: 0 },
-        uLo: { value: new THREE.Color(PALETTE.lo) },
-        uHi: { value: new THREE.Color(PALETTE.hi) },
-        uChar: { value: new THREE.Color(PALETTE.char) },
-        uEmber: { value: new THREE.Color(PALETTE.ember) },
-        uHot: { value: new THREE.Color(PALETTE.hot) },
-        uAsh: { value: new THREE.Color(PALETTE.ash) },
-      },
-    });
-    this.terrainMesh = new THREE.Mesh(geo, this.terrainMat);
-    this.scene.add(this.terrainMesh);
+  /** CPU height sample at field uv, in world units */
+  heightAt(u: number, v: number): number {
+    const S = this.terrain.size;
+    const fx = Math.min(S - 1.001, Math.max(0, u * S));
+    const fy = Math.min(S - 1.001, Math.max(0, v * S));
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const x1 = Math.min(S - 1, x0 + 1);
+    const y1 = Math.min(S - 1, y0 + 1);
+    const tx = fx - x0;
+    const ty = fy - y0;
+    const h =
+      this.terrain.heights[y0 * S + x0]! * (1 - tx) * (1 - ty) +
+      this.terrain.heights[y0 * S + x1]! * tx * (1 - ty) +
+      this.terrain.heights[y1 * S + x0]! * (1 - tx) * ty +
+      this.terrain.heights[y1 * S + x1]! * tx * ty;
+    return (h - this.terrain.minH) * EXAG;
+  }
 
+  /** field uv -> world position on the relief surface */
+  worldAt(u: number, v: number, out = new THREE.Vector3()): THREE.Vector3 {
+    return out.set(
+      (u - 0.5) * this.sceneMeters,
+      this.heightAt(u, v),
+      (v - 0.5) * this.sceneMeters,
+    );
+  }
+
+  /** swap in a new place: rebuild terrain, reset rig */
+  setTerrain(terrain: TerrainField) {
+    this.terrain = terrain;
+    this.sceneMeters = terrain.size * terrain.metersPerPx;
+    this.heightScale = (terrain.maxH - terrain.minH) * EXAG;
+    const geo = this.buildGeometry(terrain);
+    this.terrainMesh.geometry.dispose();
+    this.terrainMesh.geometry = geo;
     const smokeGeo = geo.clone();
     const sp = smokeGeo.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < sp.count; i++) sp.setY(i, sp.getY(i) + this.sceneMeters * 0.02);
-    this.smokeMat = new THREE.ShaderMaterial({
-      vertexShader: SMOKE_VERT,
-      fragmentShader: SMOKE_DRAW_FRAG,
-      glslVersion: THREE.GLSL3,
-      transparent: true,
-      depthWrite: false,
-      uniforms: {
-        uSmoke: { value: null },
-        uTime: { value: 0 },
-        uSmokeCol: { value: new THREE.Color(PALETTE.smoke) },
-      },
-    });
-    this.smokeMesh = new THREE.Mesh(smokeGeo, this.smokeMat);
-    this.smokeMesh.renderOrder = 2;
-    this.scene.add(this.smokeMesh);
-
+    this.smokeMesh.geometry.dispose();
+    this.smokeMesh.geometry = smokeGeo;
+    this.terrainMat.uniforms.uGradScale!.value =
+      ((terrain.maxH - terrain.minH) * EXAG) / terrain.metersPerPx;
+    this.scene.fog = new THREE.Fog(
+      PALETTE.void,
+      this.sceneMeters * 1.1,
+      this.sceneMeters * 3.0,
+    );
+    this.radius = this.sceneMeters * 0.98;
     this.target.set(0, (terrain.maxH - terrain.minH) * EXAG * 0.35, 0);
-    this.bindPointer();
+    this.focusT = 0;
+    this.revealT = 0;
+    this.terrainMat.uniforms.uReveal!.value = 0;
+    this.setHotspots([]);
   }
 
   attachSim(sim: Sim) {
@@ -164,13 +257,41 @@ export class Stage {
     this.smokeMat.uniforms.uSmoke!.value = sim.smokeA.texture;
   }
 
+  /** lay the real-burn markers on the relief */
+  setHotspots(pts: { u: number; v: number; conf: number }[]) {
+    const n = Math.min(pts.length, 2000);
+    const pos = new Float32Array(n * 3);
+    const conf = new Float32Array(n);
+    const p = new THREE.Vector3();
+    for (let i = 0; i < n; i++) {
+      const h = pts[i]!;
+      this.worldAt(h.u, h.v, p);
+      pos[i * 3] = p.x;
+      pos[i * 3 + 1] = p.y + this.sceneMeters * 0.006;
+      pos[i * 3 + 2] = p.z;
+      conf[i] = h.conf;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("aConf", new THREE.BufferAttribute(conf, 1));
+    this.hotspotPoints.geometry.dispose();
+    this.hotspotPoints.geometry = geo;
+  }
+
+  /** camera eases toward a point on the relief, then relaxes back */
+  nudgeFocus(point: THREE.Vector3) {
+    this.focusPt.copy(point);
+    this.focusT = 1;
+  }
+
   private bindPointer() {
     const el = this.canvas;
     el.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 && e.pointerType === "mouse") return;
       this.lastInput = performance.now();
-      if ((e.target as HTMLElement).dataset.tool) return;
+      if (!this.orbitGate(e)) return;
       this.dragging = true;
+      this.focusT = 0;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
       el.setPointerCapture(e.pointerId);
@@ -186,6 +307,7 @@ export class Stage {
       this.vPhi = -dy * 0.0032;
       this.theta += this.vTheta;
       this.phi = THREE.MathUtils.clamp(this.phi + this.vPhi, 0.28, 1.45);
+      this.orbitAccum += Math.abs(this.vTheta) + Math.abs(this.vPhi);
     });
     const up = (e: PointerEvent) => {
       this.dragging = false;
@@ -202,6 +324,7 @@ export class Stage {
       (e) => {
         e.preventDefault();
         this.lastInput = performance.now();
+        this.focusT = 0;
         const d = Math.sign(e.deltaY) * Math.min(120, Math.abs(e.deltaY));
         this.vRadius += d * this.sceneMeters * 0.0009;
       },
@@ -221,6 +344,7 @@ export class Stage {
         if (e.touches.length === 2) {
           e.preventDefault();
           this.lastInput = performance.now();
+          this.focusT = 0;
           const d = Math.hypot(
             e.touches[0]!.clientX - e.touches[1]!.clientX,
             e.touches[0]!.clientY - e.touches[1]!.clientY,
@@ -256,20 +380,27 @@ export class Stage {
       this.sceneMeters * 1.9,
     );
     this.vRadius *= Math.pow(0.02, dt);
-    // idle drift after 12s
-    if (performance.now() - this.lastInput > 12000) this.theta += dt * 0.02;
+    // idle drift after 14s
+    if (this.idleDrift && performance.now() - this.lastInput > 14000) this.theta += dt * 0.02;
+
+    if (this.focusT > 0) this.focusT = Math.max(0, this.focusT - dt * 0.45);
+    this.effTarget.copy(this.target);
+    if (this.focusT > 0) {
+      const k = Math.sin(Math.min(1, this.focusT) * Math.PI) * 0.3;
+      this.effTarget.lerpVectors(this.target, this.focusPt, k);
+    }
 
     const sp = Math.sin(this.phi);
     this.camera.position.set(
-      this.target.x + this.radius * sp * Math.sin(this.theta),
-      this.target.y + this.radius * Math.cos(this.phi),
-      this.target.z + this.radius * sp * Math.cos(this.theta),
+      this.effTarget.x + this.radius * sp * Math.sin(this.theta),
+      this.effTarget.y + this.radius * Math.cos(this.phi),
+      this.effTarget.z + this.radius * sp * Math.cos(this.theta),
     );
-    this.camera.lookAt(this.target);
+    this.camera.lookAt(this.effTarget);
 
     // milling reveal
     if (this.revealT < 1) {
-      this.revealT = Math.min(1, this.revealT + dt / 1.8);
+      this.revealT = Math.min(1, this.revealT + dt / this.revealSpeed);
       const e = 1 - Math.pow(1 - this.revealT, 3);
       this.terrainMat.uniforms.uReveal!.value = e;
     }
@@ -279,6 +410,13 @@ export class Stage {
     this.terrainMat.uniforms.uTime!.value = time;
     this.smokeMat.uniforms.uSmoke!.value = sim.smokeA.texture;
     this.smokeMat.uniforms.uTime!.value = time;
+
+    const show = this.hotspotMat.uniforms.uShow!;
+    show.value += ((this.hotspotShow ? 1 : 0) - show.value) * Math.min(1, dt * 6);
+    this.hotspotMat.uniforms.uTime!.value = time;
+    this.hotspotMat.uniforms.uPixelScale!.value =
+      this.renderer.domElement.height / 900;
+    this.hotspotPoints.visible = show.value > 0.01;
 
     this.renderer.render(this.scene, this.camera);
   }

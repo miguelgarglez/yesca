@@ -27,9 +27,9 @@ export interface SimStats {
  * GPU cellular-automaton wildfire over a real height field.
  * Textures, all FIELD_SIZE^2, float:
  *   geo   R = normalized height
- *   fuel  R = fuel density, G = moisture
+ *   fuel  R = fuel density, G = moisture, B = match scratch
  *   dyn   R = state (0 unburnt / 1 burning / 2 burnt), G = intensity,
- *         B = ignite time, A = fuel remaining
+ *         B = heat accumulator while unburnt, ignite time once lit, A = fuel remaining
  *   smoke R = density
  */
 export class Sim {
@@ -51,6 +51,7 @@ export class Sim {
   simMat: THREE.ShaderMaterial;
   smokeMat: THREE.ShaderMaterial;
   stampMat: THREE.ShaderMaterial;
+  private clearMat: THREE.ShaderMaterial;
 
   private statsRT: THREE.WebGLRenderTarget;
   private statsMat: THREE.ShaderMaterial;
@@ -61,57 +62,15 @@ export class Sim {
   wind = { x: 0, y: 0 };
   windAmt = 0;
   moisture0 = 0.4;
+  /** smoothed fire load 0..1 for audio/FX; updated from stats() calls */
+  level = 0;
 
   constructor(gl: THREE.WebGLRenderer, height01: Float32Array, weather: Weather, seed: number) {
     this.gl = gl;
-    this.wind = windVector(weather.windDeg);
-    this.windAmt = Math.min(1.6, weather.windKmh / 38);
-    this.moisture0 = Math.min(0.9, Math.max(0.08, weather.rh / 110));
-
-    // --- static geo texture ---
     this.geoTex = new THREE.DataTexture(height01, N, N, THREE.RGBAFormat, THREE.FloatType);
     this.geoTex.needsUpdate = true;
     this.geoTex.minFilter = THREE.LinearFilter;
     this.geoTex.magFilter = THREE.LinearFilter;
-
-    // --- fuel field: procedural density shaped by slope + valleys ---
-    const rng = mulberry32(seed);
-    const rand = new Float32Array(N * N);
-    for (let i = 0; i < rand.length; i++) rand[i] = rng();
-    const smooth = (x: number, y: number, r: number) => {
-      let s = 0;
-      let c = 0;
-      for (let j = -r; j <= r; j++)
-        for (let i = -r; i <= r; i++) {
-          const xx = Math.min(N - 1, Math.max(0, x + i));
-          const yy = Math.min(N - 1, Math.max(0, y + j));
-          s += rand[yy * N + xx]!;
-          c++;
-        }
-      return s / c;
-    };
-    const fuelData = new Float32Array(N * N * 4);
-    for (let y = 0; y < N; y++)
-      for (let x = 0; x < N; x++) {
-        const i = y * N + x;
-        const h = height01[i * 4]!;
-        const x1 = height01[y * N * 4 + Math.min(N - 1, x + 1) * 4]!;
-        const x0 = height01[y * N * 4 + Math.max(0, x - 1) * 4]!;
-        const y1 = height01[Math.min(N - 1, y + 1) * N * 4 + x * 4]!;
-        const y0 = height01[Math.max(0, y - 1) * N * 4 + x * 4]!;
-        const slope = Math.hypot(x1 - x0, y1 - y0);
-        const n =
-          smooth(x, y, 2) * 0.45 + smooth(x, y, 7) * 0.35 + smooth(x, y, 18) * 0.2;
-        // valleys + moderate slopes carry fuel; bare ridges and cliffs are thin
-        let fuel = 0.28 + n * 0.62 - slope * 1.1 - Math.max(0, h - 0.82) * 1.4;
-        fuel = Math.min(1, Math.max(0.02, fuel));
-        fuelData[i * 4] = fuel;
-        fuelData[i * 4 + 1] = this.moisture0;
-        fuelData[i * 4 + 3] = 1;
-      }
-
-    const fuelTex = new THREE.DataTexture(fuelData, N, N, THREE.RGBAFormat, THREE.FloatType);
-    fuelTex.needsUpdate = true;
 
     const geo = new THREE.PlaneGeometry(2, 2);
     this.quad = new THREE.Mesh(geo, this.mat);
@@ -125,14 +84,11 @@ export class Sim {
     this.smokeA = makeRT(THREE.FloatType);
     this.smokeB = makeRT(THREE.FloatType);
 
-    // upload fuelData into fuelA
-    const initMat = new THREE.ShaderMaterial({
+    this.clearMat = new THREE.ShaderMaterial({
       vertexShader: QUAD_VERT,
-      fragmentShader: `precision highp float; in vec2 vUv; out vec4 frag; uniform sampler2D t; void main(){ frag = texture(t, vUv); }`,
+      fragmentShader: `precision highp float; out vec4 frag; void main(){ frag = vec4(0.0); }`,
       glslVersion: THREE.GLSL3,
-      uniforms: { t: { value: fuelTex } },
     });
-    this.runPass(initMat, this.fuelA);
 
     this.simMat = new THREE.ShaderMaterial({
       vertexShader: QUAD_VERT,
@@ -143,15 +99,16 @@ export class Sim {
         uGeo: { value: this.geoTex },
         uFuel: { value: null },
         uTexel: { value: new THREE.Vector2(1 / N, 1 / N) },
-        uWind: { value: new THREE.Vector2(this.wind.x, this.wind.y) },
-        uWindAmt: { value: this.windAmt },
+        uWind: { value: new THREE.Vector2(0, 0) },
+        uWindAmt: { value: 0 },
         uSlopeBoost: { value: 26 },
         uTime: { value: 0 },
         uDt: { value: 0 },
-        uBurnTime: { value: 5.5 },
-        uSpread: { value: 0.62 },
+        uBurnTime: { value: 7.0 },
+        uSpread: { value: 0.5 },
+        uThresh: { value: 4.8 },
         uSpotDist: { value: 9 },
-        uSpotProb: { value: 0.012 },
+        uSpotProb: { value: 0.008 },
       },
     });
     this.smokeMat = new THREE.ShaderMaterial({
@@ -162,8 +119,8 @@ export class Sim {
         uSmoke: { value: null },
         uState: { value: null },
         uTexel: { value: new THREE.Vector2(1 / N, 1 / N) },
-        uWind: { value: new THREE.Vector2(this.wind.x, this.wind.y) },
-        uWindAmt: { value: this.windAmt },
+        uWind: { value: new THREE.Vector2(0, 0) },
+        uWindAmt: { value: 0 },
         uDt: { value: 0 },
         uTime: { value: 0 },
       },
@@ -211,6 +168,91 @@ export class Sim {
       glslVersion: THREE.GLSL3,
       uniforms: { uState: { value: null } },
     });
+
+    this.applyWeather(weather);
+    this.initFuel(seed);
+    this.runPass(this.clearMat, this.dynA);
+    this.runPass(this.clearMat, this.smokeA);
+  }
+
+  /** live weather refresh: wind swings, sim inherits */
+  applyWeather(weather: Weather) {
+    this.wind = windVector(weather.windDeg);
+    this.windAmt = Math.min(1.6, weather.windKmh / 38);
+    this.moisture0 = Math.min(0.9, Math.max(0.08, weather.rh / 110));
+    this.simMat.uniforms.uWind!.value = new THREE.Vector2(this.wind.x, this.wind.y);
+    this.simMat.uniforms.uWindAmt!.value = this.windAmt;
+    this.smokeMat.uniforms.uWind!.value = new THREE.Vector2(this.wind.x, this.wind.y);
+    this.smokeMat.uniforms.uWindAmt!.value = this.windAmt;
+  }
+
+  private initFuel(seed: number) {
+    const rng = mulberry32(seed);
+    const rand = new Float32Array(N * N);
+    for (let i = 0; i < rand.length; i++) rand[i] = rng();
+    const height01 = this.geoTex.image.data as Float32Array;
+    const smooth = (x: number, y: number, r: number) => {
+      let s = 0;
+      let c = 0;
+      for (let j = -r; j <= r; j++)
+        for (let i = -r; i <= r; i++) {
+          const xx = Math.min(N - 1, Math.max(0, x + i));
+          const yy = Math.min(N - 1, Math.max(0, y + j));
+          s += rand[yy * N + xx]!;
+          c++;
+        }
+      return s / c;
+    };
+    const fuelData = new Float32Array(N * N * 4);
+    for (let y = 0; y < N; y++)
+      for (let x = 0; x < N; x++) {
+        const i = y * N + x;
+        const h = height01[i * 4]!;
+        const x1 = height01[y * N * 4 + Math.min(N - 1, x + 1) * 4]!;
+        const x0 = height01[y * N * 4 + Math.max(0, x - 1) * 4]!;
+        const y1 = height01[Math.min(N - 1, y + 1) * N * 4 + x * 4]!;
+        const y0 = height01[Math.max(0, y - 1) * N * 4 + x * 4]!;
+        const slope = Math.hypot(x1 - x0, y1 - y0);
+        const n =
+          smooth(x, y, 2) * 0.45 + smooth(x, y, 7) * 0.35 + smooth(x, y, 18) * 0.2;
+        // valleys + moderate slopes carry fuel; bare ridges and cliffs are thin
+        let fuel = 0.28 + n * 0.62 - slope * 1.1 - Math.max(0, h - 0.82) * 1.4;
+        fuel = Math.min(1, Math.max(0.02, fuel));
+        fuelData[i * 4] = fuel;
+        fuelData[i * 4 + 1] = this.moisture0;
+        fuelData[i * 4 + 3] = 1;
+      }
+
+    const fuelTex = new THREE.DataTexture(fuelData, N, N, THREE.RGBAFormat, THREE.FloatType);
+    fuelTex.needsUpdate = true;
+    const initMat = new THREE.ShaderMaterial({
+      vertexShader: QUAD_VERT,
+      fragmentShader: `precision highp float; in vec2 vUv; out vec4 frag; uniform sampler2D t; void main(){ frag = texture(t, vUv); }`,
+      glslVersion: THREE.GLSL3,
+      uniforms: { t: { value: fuelTex } },
+    });
+    this.runPass(initMat, this.fuelA);
+    initMat.dispose();
+    fuelTex.dispose();
+  }
+
+  /** swap in a new terrain+weather+seed for a different place */
+  reset(height01: Float32Array, weather: Weather, seed: number) {
+    this.geoTex.dispose();
+    this.geoTex = new THREE.DataTexture(height01, N, N, THREE.RGBAFormat, THREE.FloatType);
+    this.geoTex.needsUpdate = true;
+    this.geoTex.minFilter = THREE.LinearFilter;
+    this.geoTex.magFilter = THREE.LinearFilter;
+    this.simMat.uniforms.uGeo!.value = this.geoTex;
+    this.applyWeather(weather);
+    this.initFuel(seed);
+    for (const rt of [this.dynA, this.dynB, this.smokeA, this.smokeB]) {
+      this.runPass(this.clearMat, rt);
+    }
+    this.stampQueue.length = 0;
+    this.time = 0;
+    this.acc = 0;
+    this.level = 0;
   }
 
   private runPass(mat: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget) {
@@ -220,8 +262,8 @@ export class Sim {
     this.gl.setRenderTarget(null);
   }
 
-  /** queue a brush stroke; mode 0=ignite 1=firebreak 2=rain */
-  stamp(mode: 0 | 1 | 2, points: { u: number; v: number }[], radiusPx: number, strength = 1) {
+  /** queue a brush stroke; mode 0=ignite 1=firebreak 2=rain 3=scratch */
+  stamp(mode: 0 | 1 | 2 | 3, points: { u: number; v: number }[], radiusPx: number, strength = 1) {
     const pts = points.slice(0, 64).map((p) => new THREE.Vector4(p.u, p.v, radiusPx / N, strength));
     if (pts.length) this.stampQueue.push({ mode, pts });
   }
@@ -236,7 +278,10 @@ export class Sim {
       u.uMode!.value = mode;
       u.uTime!.value = this.time;
       const arr = u.uStamps!.value as THREE.Vector4[];
-      pts.forEach((p, i) => arr[i]!.copy(p));
+      for (let i = 0; i < 64; i++) {
+        if (i < pts.length) arr[i]!.copy(pts[i]!);
+        else arr[i]!.set(0, 0, 0, 0);
+      }
       u.uCount!.value = pts.length;
       this.runPass(this.stampMat, dst);
       if (isDyn) [this.dynA, this.dynB] = [this.dynB, this.dynA];
@@ -269,23 +314,25 @@ export class Sim {
     }
   }
 
-  /** debug: raw dyn texel at uv */
+  private cellRT = new THREE.WebGLRenderTarget(1, 1, {
+    type: THREE.FloatType,
+    format: THREE.RGBAFormat,
+    depthBuffer: false,
+  });
+  private cellMat = new THREE.ShaderMaterial({
+    vertexShader: QUAD_VERT,
+    fragmentShader: `precision highp float; in vec2 vUv; out vec4 frag; uniform sampler2D t; uniform vec2 p; void main(){ frag = texture(t, p); }`,
+    glslVersion: THREE.GLSL3,
+    uniforms: { t: { value: null }, p: { value: new THREE.Vector2() } },
+  });
+
+  /** raw dyn texel at uv — powers the hover whisper */
   cell(u: number, v: number): number[] {
-    const rt = new THREE.WebGLRenderTarget(1, 1, {
-      type: THREE.FloatType,
-      format: THREE.RGBAFormat,
-      depthBuffer: false,
-    });
-    const m = new THREE.ShaderMaterial({
-      vertexShader: QUAD_VERT,
-      fragmentShader: `precision highp float; in vec2 vUv; out vec4 frag; uniform sampler2D t; uniform vec2 p; void main(){ frag = texture(t, p); }`,
-      glslVersion: THREE.GLSL3,
-      uniforms: { t: { value: this.dynA.texture }, p: { value: new THREE.Vector2(u, v) } },
-    });
-    this.runPass(m, rt);
+    this.cellMat.uniforms.t!.value = this.dynA.texture;
+    this.cellMat.uniforms.p!.value.set(u, v);
+    this.runPass(this.cellMat, this.cellRT);
     const buf = new Float32Array(4);
-    this.gl.readRenderTargetPixels(rt, 0, 0, 1, 1, buf);
-    rt.dispose();
+    this.gl.readRenderTargetPixels(this.cellRT, 0, 0, 1, 1, buf);
     return Array.from(buf);
   }
 
@@ -301,6 +348,7 @@ export class Sim {
       burnt += buf[i * 4 + 1]!;
     }
     const total = N * N;
+    this.level = this.level * 0.8 + Math.min(1, burning * 14) * 0.2;
     return { burning: burning / total, burnt: burnt / total, time: this.time };
   }
 

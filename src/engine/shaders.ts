@@ -7,23 +7,28 @@ void main() {
 }
 `;
 
-/** advances the fire state one tick */
+/**
+ * advances the fire state one tick.
+ * field space: v=0 is north, v=1 is south — so the north-component of the
+ * wind vector is negated once, up front, as W.
+ */
 export const SIM_FRAG = /* glsl */ `
 precision highp float;
 in vec2 vUv;
 out vec4 frag;
 
-uniform sampler2D uState;   // R=state 0/1/2, G=intensity, B=igniteTime, A=fuelLeft
+uniform sampler2D uState;   // R=state 0/1/2, G=intensity, B=heat|igniteTime, A=fuelLeft
 uniform sampler2D uGeo;     // R=height01
-uniform sampler2D uFuel;    // R=fuel, G=moisture
+uniform sampler2D uFuel;    // R=fuel, G=moisture, B=scratch
 uniform vec2 uTexel;
-uniform vec2 uWind;         // unit dir, scene space (x east, y north→v up)
+uniform vec2 uWind;         // scene space: x east+, y north+
 uniform float uWindAmt;     // 0..~1.6 normalized
 uniform float uSlopeBoost;  // uphill spread gain
 uniform float uTime;
 uniform float uDt;
 uniform float uBurnTime;    // seconds a cell burns
 uniform float uSpread;      // base spread coefficient
+uniform float uThresh;      // heat needed to ignite
 uniform float uSpotDist;    // ember spotting distance in px
 uniform float uSpotProb;    // per-tick spotting chance
 
@@ -39,9 +44,10 @@ void main() {
   float igniteT = s.b;
   float fuelLeft = s.a;
   float moist = fu.g;
+  vec2 W = vec2(uWind.x, -uWind.y);
 
   if (state < 0.5) {
-    // unburnt: accumulate ignition pressure from burning neighbors
+    // unburnt: heat accumulates from burning neighbors until it catches
     float score = 0.0;
     for (int j = -1; j <= 1; j++)
     for (int i = -1; i <= 1; i++) {
@@ -50,39 +56,41 @@ void main() {
       vec2 dir = normalize(off);
       vec4 sn = texture(uState, vUv + off * uTexel);
       if (sn.r > 0.5 && sn.r < 1.5) {
-        float wdot = dot(dir, uWind);
-        float wf = exp2(wdot * uWindAmt * 2.2);         // downwind boost
+        float wdot = dot(dir, W);
+        float wf = exp2(clamp(wdot * uWindAmt, -2.0, 1.8));   // downwind boost
         float hn = texture(uGeo, vUv + off * uTexel).r;
-        float up = texture(uGeo, vUv).r - hn;            // uphill positive
+        float up = texture(uGeo, vUv).r - hn;                 // uphill positive
         float sf = clamp(1.0 + up * uSlopeBoost, 0.05, 5.0);
         score += sn.g * wf * sf;
       }
     }
     score *= uSpread * fu.r;
     // ember spotting: a hot cell upwind throws a spark here
-    vec2 sparkFrom = vUv - uWind * uSpotDist * uTexel;
+    vec2 sparkFrom = vUv - W * uSpotDist * uTexel;
     vec4 ss = texture(uState, sparkFrom);
     float rnd = hash(vUv * 917.0 + vec2(fract(uTime * 0.611), fract(uTime * 0.377)));
     bool spot = ss.r > 0.5 && ss.r < 1.5 && ss.g > 0.7 && rnd < uSpotProb * (0.25 + uWindAmt);
-    float thresh = 0.55 + moist * 1.5;
-    if ((score > thresh || spot) && fu.r > 0.04) {
+    float heat = s.b * exp(-uDt * 0.5) + score;
+    float thresh = uThresh * (0.55 + moist * 1.6) * (0.7 + 0.6 * hash(vUv * 41.7));
+    if ((heat > thresh || spot) && fu.r > 0.04) {
       frag = vec4(1.0, 1.15, uTime, fu.r);   // ignite: intensity overshoot = flash
       return;
     }
-    frag = s;
+    frag = vec4(0.0, s.g, heat, s.a);
     return;
   }
 
   if (state < 1.5) {
-    // burning: consume fuel
+    // burning: consume fuel; intensity is a pulse — hottest right after the
+    // flash, cooling toward char, so the visible front stays a thin bright edge
     float rem = fuelLeft - (uDt / uBurnTime);
     if (rem <= 0.0) {
       frag = vec4(2.0, 0.55, igniteT, 0.0);  // burnt, cooling
       return;
     }
-    float shape = clamp(rem * 1.8, 0.0, 1.0);
+    float a01 = clamp(1.0 - rem / max(fu.r, 0.05), 0.0, 1.0);
     float flick = 0.82 + 0.18 * sin(uTime * 9.0 + dot(vUv, vec2(311.0, 743.0)));
-    float g = mix(0.45, 1.05, shape) * flick;
+    float g = (1.12 * exp(-a01 * 2.4) + 0.10) * flick;
     frag = vec4(1.0, g, igniteT, rem);
     return;
   }
@@ -108,9 +116,10 @@ uniform float uDt;
 uniform float uTime;
 
 void main() {
-  vec2 flow = uWind * (14.0 + 46.0 * uWindAmt) * uDt + vec2(0.0, 6.0) * uDt;
+  vec2 W = vec2(uWind.x, -uWind.y);
+  vec2 flow = W * (14.0 + 46.0 * uWindAmt) * uDt + vec2(0.0, -5.0) * uDt;
   vec2 from = vUv - flow * uTexel;
-  float d = texture(uSmoke, from).r * exp(-uDt * 0.55);
+  float d = texture(uSmoke, from).r * exp(-uDt * 0.5);
   // slight diffusion so plumes shred instead of sliding as a block
   float blur = 0.0;
   blur += texture(uSmoke, from + vec2(uTexel.x, 0.0)).r;
@@ -119,12 +128,12 @@ void main() {
   blur += texture(uSmoke, from - vec2(0.0, uTexel.y)).r;
   d = mix(d, blur * 0.25, 0.18);
   float emit = texture(uState, vUv).g;
-  d += emit * emit * 0.45 * uDt;
+  d += emit * emit * 0.6 * uDt;
   frag = vec4(clamp(d, 0.0, 1.0), 0.0, 0.0, 1.0);
 }
 `;
 
-/** stamp pass: applies brush strokes (ignite / fuel / moisture edits) */
+/** stamp pass: applies brush strokes (ignite / fuel / moisture / scratch edits) */
 export const STAMP_FRAG = /* glsl */ `
 precision highp float;
 in vec2 vUv;
@@ -134,7 +143,7 @@ uniform sampler2D uPrev;
 uniform vec4 uStamps[64];    // xy = uv center, z = radius(px)*texel, w = strength
 uniform int uCount;
 uniform vec2 uTexel;
-uniform int uMode;           // 0 ignite, 1 firebreak (fuel=0, moist=1), 2 rain (moist +=)
+uniform int uMode;           // 0 ignite, 1 firebreak (fuel=0, moist=1), 2 rain (moist +=), 3 scratch
 uniform float uTime;
 
 void main() {
@@ -151,8 +160,10 @@ void main() {
     else frag = prev;
   } else if (uMode == 1) {
     frag = vec4(max(prev.r - acc, 0.0), max(prev.g, acc), prev.b, prev.a);
-  } else {
+  } else if (uMode == 2) {
     frag = vec4(prev.r, min(prev.g + acc * 0.9, 1.0), prev.b, prev.a);
+  } else {
+    frag = vec4(prev.r, prev.g, max(prev.b, acc), prev.a);
   }
 }
 `;
@@ -213,9 +224,9 @@ void main() {
 
   vec3 base = mix(uLo, uHi, smoothstep(0.0, 1.0, h));
   base *= 0.9 + 0.2 * vnoise(vUv * 320.0);
-  vec3 col = base * (0.5 + 0.6 * sky + 1.7 * pow(dif, 1.1));
+  vec3 col = base * (0.5 + 0.6 * sky + 1.45 * pow(dif, 1.1));
   // rim of warm from the key light
-  col += uHi * pow(dif, 6.0) * 0.3;
+  col += uHi * pow(dif, 6.0) * 0.24;
 
   vec4 st = texture(uState, fuv);
   vec4 fu = texture(uFuel, fuv);
@@ -223,6 +234,10 @@ void main() {
   // firebreak furrow: fuelless wet band reads darker, damp
   float cut = (1.0 - smoothstep(0.05, 0.25, fu.r)) * step(0.5, fu.g);
   col = mix(col, uChar * 0.55, cut * 0.85);
+
+  // match scratch: a pale line scored into the land
+  float scratch = clamp(fu.b, 0.0, 1.0);
+  col = mix(col, vec3(0.95, 0.88, 0.7), scratch * 0.45);
 
   // burn states
   if (st.r > 1.5) {
@@ -233,12 +248,12 @@ void main() {
     float ember = st.g * (0.6 + 0.4 * sin(uTime * 7.0 + vUv.x * 900.0 + vUv.y * 731.0));
     col += uEmber * ember * 0.6;
   } else if (st.r > 0.5) {
-    // burning: hot char beneath + flame glow
+    // burning: dim ember body, incandescent only where intensity peaks
     float i = st.g;
-    vec3 c = mix(uChar * 0.7, uEmber, clamp(i * 1.15, 0.0, 1.0));
-    c = mix(c, uHot, smoothstep(0.85, 1.3, i));
+    vec3 c = mix(uChar * 0.55, uEmber, clamp(i * 1.05, 0.0, 1.0));
+    c = mix(c, uHot, smoothstep(0.95, 1.3, i));
     float lick = vnoise(vUv * 700.0 + vec2(0.0, -uTime * 3.0));
-    col = c * (1.15 + 0.8 * lick);
+    col = c * (0.3 + 0.75 * i) * (1.0 + 0.5 * lick * i);
   }
   // soft halo around active fire — blur-sample the intensity field
   float halo = 0.0;
@@ -251,7 +266,7 @@ void main() {
   halo += texture(uState, fuv + vec2(uTexel.x * 7.0, -uTexel.y * 7.0)).g;
   halo += texture(uState, fuv - vec2(uTexel.x * 7.0, -uTexel.y * 7.0)).g;
   float burnHalo = halo * 0.125;
-  col += uEmber * burnHalo * 0.5;
+  col += uEmber * burnHalo * 0.45;
 
   // wet sheen
   col = mix(col, col * vec3(0.82, 0.9, 1.06), clamp(fu.g - 0.45, 0.0, 1.0) * 0.7);
@@ -260,8 +275,9 @@ void main() {
   float edge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
   col *= smoothstep(0.0, 0.035, edge);
 
-  // reveal sweep: unbuilt region is dark
+  // reveal sweep: unbuilt region is dark, milled in patches
   float rr = distance(vUv, vec2(0.5)) * 1.15;
+  rr += (hash(floor(vUv * 26.0)) - 0.5) * 0.16;
   float built = smoothstep(rr, rr + 0.16, uReveal * 1.3);
   col *= built;
 
@@ -293,7 +309,138 @@ void main() {
   vec2 wuv = fuv + vec2(vnoise(vUv * 9.0 + uTime * 0.05), vnoise(vUv * 9.0 - uTime * 0.04)) * 0.02;
   float d = texture(uSmoke, wuv).r;
   float shred = vnoise(vUv * 46.0 + vec2(uTime * 0.11, -uTime * 0.07));
-  float a = smoothstep(0.05, 0.7, d) * (0.5 + 0.5 * shred);
-  frag = vec4(uSmokeCol, a * 0.42);
+  float a = smoothstep(0.04, 0.65, d) * (0.5 + 0.5 * shred);
+  frag = vec4(uSmokeCol, a * 0.5);
+}
+`;
+
+/**
+ * ambient embers: GPU particles that lift off any cell whose intensity is
+ * high enough — burning frontier, then cooling scar. All state on the GPU.
+ */
+export const EMBER_VERT = /* glsl */ `
+precision highp float;
+in vec2 aUv;
+in vec3 aSeed;
+uniform sampler2D uState;   // G = intensity
+uniform sampler2D uHeight;  // R = h01
+uniform float uHeightScale; // meters per normalized height
+uniform float uWorldSize;
+uniform vec2 uWind;         // world space: x east+, z north- ... handled below
+uniform float uTime;
+uniform float uPixelScale;
+out float vAlpha;
+out float vHot;
+
+void main() {
+  vec4 st = texture(uState, aUv);
+  float i = st.g;
+  float embers = clamp((i - 0.38) * 2.4, 0.0, 1.0);
+  if (embers <= 0.001) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    vAlpha = 0.0;
+    vHot = 0.0;
+    return;
+  }
+  float rate = mix(0.5, 0.9, aSeed.x);
+  float t = fract(uTime * rate + aSeed.y * 7.0);
+  float h = texture(uHeight, aUv).r;
+  vec3 base = vec3((aUv.x - 0.5) * uWorldSize, h * uHeightScale, (aUv.y - 0.5) * uWorldSize);
+  // rise + curl + downwind drift; uWind is (east, north), world z south+ so -y
+  vec2 wdir = vec2(uWind.x, -uWind.y);
+  float lift = t * uWorldSize * (0.012 + aSeed.z * 0.02);
+  vec2 drift = wdir * t * uWorldSize * (0.008 + aSeed.x * 0.014);
+  drift += vec2(sin(uTime * 2.1 + aSeed.y * 31.0), cos(uTime * 1.7 + aSeed.x * 27.0)) * uWorldSize * 0.003 * t;
+  vec3 pos = base + vec3(drift.x, lift, drift.y);
+  vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float size = mix(2.2, 4.2, aSeed.z);
+  gl_PointSize = size * uPixelScale / max(1.0, -mv.z / 900.0);
+  vAlpha = embers * smoothstep(0.0, 0.08, t) * (1.0 - smoothstep(0.55, 1.0, t));
+  vHot = clamp(i, 0.0, 1.2);
+}
+`;
+
+export const EMBER_FRAG = /* glsl */ `
+precision highp float;
+in float vAlpha;
+in float vHot;
+out vec4 frag;
+void main() {
+  vec2 d = gl_PointCoord - 0.5;
+  float r = length(d);
+  float a = smoothstep(0.5, 0.1, r) * vAlpha;
+  vec3 col = mix(vec3(1.0, 0.35, 0.12), vec3(1.0, 0.78, 0.24), smoothstep(0.7, 1.1, vHot));
+  frag = vec4(col * a, a);
+}
+`;
+
+/** strike sparks + rain streaks: CPU-integrated buffer */
+export const BURST_VERT = /* glsl */ `
+precision highp float;
+in vec3 aVel;
+in vec3 aInfo;   // age01, kind(0 spark, 1 rain), seed
+uniform float uPixelScale;
+out float vAlpha;
+out float vKind;
+void main() {
+  vKind = aInfo.y;
+  vAlpha = aInfo.x >= 1.0 ? 0.0 : (1.0 - aInfo.x) * (aInfo.y > 0.5 ? 0.35 : 1.0);
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float size = aInfo.y > 0.5 ? 1.6 : mix(1.8, 3.4, aInfo.z);
+  gl_PointSize = aInfo.x >= 1.0 ? 0.0 : size * uPixelScale / max(1.0, -mv.z / 900.0);
+}
+`;
+
+export const BURST_FRAG = /* glsl */ `
+precision highp float;
+in float vAlpha;
+in float vKind;
+out vec4 frag;
+void main() {
+  vec2 d = gl_PointCoord - 0.5;
+  float r = length(d);
+  float a = smoothstep(0.5, 0.08, r) * vAlpha;
+  vec3 col = vKind > 0.5 ? vec3(0.65, 0.72, 0.85) : vec3(1.0, 0.52, 0.15);
+  frag = vec4(col * a, a);
+}
+`;
+
+/** GIBS real-burn markers: pulsing red diamonds on the relief */
+export const HOTSPOT_VERT = /* glsl */ `
+precision highp float;
+in float aConf;
+uniform float uPixelScale;
+uniform float uShow;
+uniform float uTime;
+out float vConf;
+out float vPhase;
+void main() {
+  vConf = aConf;
+  vPhase = aConf * 17.0;
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv * uShow;
+  float pulse = 1.0 + 0.3 * sin(uTime * 2.4 + vPhase);
+  gl_PointSize = uShow * 15.0 * pulse * uPixelScale / max(1.0, -mv.z / 900.0);
+}
+`;
+
+export const HOTSPOT_FRAG = /* glsl */ `
+precision highp float;
+in float vConf;
+in float vPhase;
+uniform float uTime;
+out vec4 frag;
+void main() {
+  vec2 d = abs(gl_PointCoord - 0.5);
+  float diamond = d.x + d.y;
+  float body = 1.0 - smoothstep(0.18, 0.26, diamond);
+  float ring = (1.0 - smoothstep(0.4, 0.5, diamond)) * smoothstep(0.3, 0.4, diamond);
+  float pulse = 0.5 + 0.5 * sin(uTime * 2.4 + vPhase);
+  vec3 red = vec3(1.0, 0.23, 0.19);
+  float a = body * (0.75 + 0.25 * vConf) + ring * pulse * 0.5;
+  frag = vec4(red, a);
 }
 `;
