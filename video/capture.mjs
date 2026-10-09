@@ -45,9 +45,13 @@ if (keep("beat1-open")) await clip("beat1-open", async (page) => {
 
 // beat 2: orbit — drag the darkness, the land tilts
 if (keep("beat2-orbit")) await clip("beat2-orbit", async (page) => {
+  await page.waitForTimeout(2500);
+  await page.keyboard.press("1"); // orbit tool — a drag on land would strike a match
+  await page.waitForTimeout(300);
+  await drag(page, 620, 360, 240, -50, 16, 70);
+  await page.waitForTimeout(500);
+  await drag(page, 700, 400, -180, 80, 14, 70);
   await page.waitForTimeout(1200);
-  await drag(page, 640, 380, 150, -60, 16, 70);
-  await page.waitForTimeout(1400);
 });
 
 // beat 3: the match — scratch, sparks, flare, ignition
@@ -61,8 +65,11 @@ if (keep("beat3-strike")) await clip("beat3-strike", async (page) => {
 
 // beat 4: fire runs downwind while the instruments tick
 if (keep("beat4-burn")) await clip("beat4-burn", async (page) => {
-  await page.evaluate(() => window.__yesca.ignite(0.52, 0.55));
-  await page.waitForTimeout(9000);
+  await page.waitForTimeout(2500);
+  await page.keyboard.press("2"); // a dragged match lays a longer front
+  await page.waitForTimeout(300);
+  await drag(page, 560, 400, 160, -90, 14, 70);
+  await page.waitForTimeout(10000);
 });
 
 // beat 5: tools — firebreak carve, then rain
@@ -81,7 +88,7 @@ if (keep("beat5-tools")) await clip("beat5-tools", async (page) => {
 // beat 6: real burns — NASA diamonds fade in
 if (keep("beat6-real")) await clip("beat6-real", async (page) => {
   await page.waitForTimeout(1500);
-  await page.click(".instruments .lever", { position: { x: 20, y: 10 } }).catch(() => {});
+  await page.click(".rail .lever", { position: { x: 20, y: 10 } }).catch(() => {});
   await page.waitForTimeout(4500);
 });
 
