@@ -279,10 +279,23 @@ export default function App() {
     return () => removeEventListener("resize", onResize);
   }, [ready]);
 
-  // offline flag
+  // offline flag — the banner lingers through its exit like every other surface
+  const [offlineLinger, setOfflineLinger] = useState(!navigator.onLine);
+  useEffect(() => {
+    if (offline) {
+      setOfflineLinger(true);
+      return;
+    }
+    const t = setTimeout(() => setOfflineLinger(false), 200);
+    return () => clearTimeout(t);
+  }, [offline]);
   useEffect(() => {
     const off = () => setOffline(true);
-    const on = () => setOffline(false);
+    const on = () => {
+      // connectivity returning is still a leave — play the clip, not a cut
+      playExit(document.querySelector(".conn"), 180, "translateX(-50%) translateY(-4px)");
+      setOffline(false);
+    };
     addEventListener("offline", off);
     addEventListener("online", on);
     return () => {
@@ -787,7 +800,13 @@ export default function App() {
           <header className="masthead">
             <button
               className="place-btn"
-              onClick={() => setPlacesOpen((o) => !o)}
+              onClick={() => {
+                // the toggle owns this close — outside-click skips .place-btn,
+                // so the clip has to be fired here or the tray just cuts out
+                if (placesOpen)
+                  playExit(document.querySelector(".placetray"), 240, "scale(0.97) translateY(-4px)");
+                setPlacesOpen((o) => !o);
+              }}
               aria-expanded={placesOpen}
               title="choose a hillside"
             >
@@ -931,8 +950,8 @@ export default function App() {
             </div>
           )}
 
-          {offline && (
-            <div className="offline" role="status">
+          {(offline || offlineLinger) && (
+            <div className={`offline conn${offline ? "" : " out"}`} role="status">
               no connection — the wind is a memory
             </div>
           )}

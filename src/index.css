@@ -634,7 +634,8 @@ body.revealed .guide.out,
 /* ---------- mobile ---------- */
 
 @media (max-width: 700px) {
-  .masthead { padding: 14px 16px; }
+  /* viewport-fit=cover makes the insets real — the masthead clears the notch */
+  .masthead { padding: calc(14px + env(safe-area-inset-top)) 16px 14px; }
   .place-btn { font-size: 11px; }
   .instruments {
     left: 16px; bottom: calc(96px + env(safe-area-inset-bottom)); gap: 12px;
@@ -658,27 +659,38 @@ body.revealed .guide.out,
   /* rail tops out at 148+44=192 — the chip clears it with room to spare */
   .sharechip { left: 16px; bottom: calc(204px + env(safe-area-inset-bottom)); min-height: 44px; display: inline-flex; align-items: center; }
   .tray { bottom: calc(14px + env(safe-area-inset-bottom)); padding: 6px 10px 6px 12px; }
-  /* the whole stack lifts with the dock — a home-indicator inset used to
-     raise the tray alone and park it inside the readouts and the lesson */
-  .offline { bottom: calc(74px + env(safe-area-inset-bottom)); }
+  /* top line only — setting bottom too would stretch the toast into a
+     capsule down the hillside. it sits below the masthead's ~72px */
+  .offline {
+    bottom: auto; top: calc(84px + env(safe-area-inset-top));
+    width: max-content; max-width: calc(100vw - 32px);
+  }
   .dock-brand span { display: none; }
   .tbtn { width: 44px; height: 44px; }
   /* the phone lesson is two rows: the sentence alone, then the controls —
      a 44px target beside the sentence is what used to cut it in half */
-  .guide { bottom: calc(100px + env(safe-area-inset-bottom)); max-width: 88vw; flex-direction: column; align-items: stretch; gap: 6px; }
+  /* left:50% + width:auto shrink-fits the lesson into the leftover half —
+     max-content lets the sentence use the 88vw the query already wrote */
+  .guide { bottom: calc(100px + env(safe-area-inset-bottom)); width: max-content; max-width: 88vw; flex-direction: column; align-items: stretch; gap: 6px; }
   .guide .g-k { display: none; }
   .g-top { display: flex; align-items: baseline; gap: 10px; }
   .g-meta { display: flex; align-items: center; gap: 14px; }
   .g-meta .g-dots { margin-left: auto; }
   .g-morph { display: none; }
-  .g-plain { display: inline; position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; }
+  /* the plain twin can't morph — a short fade-in per step is the honest
+     change of words (the span remounts on step so this replays) */
+  .g-plain {
+    display: inline; position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal;
+    animation: g-plain-in 240ms var(--ease-out) backwards;
+  }
+  @keyframes g-plain-in { from { opacity: 0; } }
   .placetray { top: 56px; right: 16px; left: 16px; width: auto; }
 }
 
 /* ---------- reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .guide, .placetray, .sheet, .sheet-back, .offline, .hoverchip,
+  .guide, .g-plain, .placetray, .sheet, .sheet-back, .offline, .hoverchip,
   .sharechip, .masthead, .instruments, .rail, .tray,
   body.revealed .masthead, body.revealed .instruments,
   body.revealed .rail, body.revealed .tray,

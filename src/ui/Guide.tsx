@@ -55,7 +55,9 @@ export function Guide({ step, closing, onSkip, buzzOn, onBuzz }: Props) {
           <span className="g-morph" aria-hidden="true">
             <TextMorph>{c.line}</TextMorph>
           </span>
-          <span className="g-plain">{c.line}</span>
+          {/* key remounts the line per step — the phone's g-plain-in fade
+              replays, so the sentence changes like it means it, not a blink */}
+          <span className="g-plain" key={step}>{c.line}</span>
         </span>
       </div>
       <div className="g-meta">
@@ -72,7 +74,9 @@ export function Guide({ step, closing, onSkip, buzzOn, onBuzz }: Props) {
         )}
         <span className="g-dots" aria-hidden>
           {(["orbit", "strike", "break"] as const).map((s) => (
-            <i key={s} className={s === step || step === "done" ? "on" : ""} />
+            // during the exit only the last-taught step stays lit — a skip at
+            // step one must not fade out wearing all three
+            <i key={s} className={s === (step === "done" ? last.current : step) ? "on" : ""} />
           ))}
         </span>
         <button className="g-skip" onClick={onSkip} aria-label="skip the tour">
