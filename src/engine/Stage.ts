@@ -62,6 +62,7 @@ export class Stage {
   private vPhi = 0;
   private vRadius = 0;
   private dragging = false;
+  private dragId = -1;
   private lastMoveT = 0;
   private lastX = 0;
   private lastY = 0;
@@ -322,9 +323,14 @@ export class Stage {
     const el = this.canvas;
     el.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 && e.pointerType === "mouse") return;
+      if (this.dragging) return; // a second finger can't hijack the drag
       this.lastInput = performance.now();
       if (!this.orbitGate(e)) return;
       this.dragging = true;
+      this.dragId = e.pointerId;
+      // regrabbing ends an in-flight coast — the hand owns the land again
+      this.vTheta = 0;
+      this.vPhi = 0;
       this.focusT = 0;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
@@ -332,7 +338,7 @@ export class Stage {
       el.setPointerCapture(e.pointerId);
     });
     el.addEventListener("pointermove", (e) => {
-      if (!this.dragging) return;
+      if (!this.dragging || e.pointerId !== this.dragId) return;
       this.lastInput = performance.now();
       const dx = e.clientX - this.lastX;
       const dy = e.clientY - this.lastY;
@@ -352,7 +358,9 @@ export class Stage {
       this.orbitAccum += Math.abs(dTheta) + Math.abs(dPhi);
     });
     const up = (e: PointerEvent) => {
+      if (e.pointerId !== this.dragId) return;
       this.dragging = false;
+      this.dragId = -1;
       try {
         el.releasePointerCapture(e.pointerId);
       } catch {
@@ -415,9 +423,11 @@ export class Stage {
       this.theta += this.vTheta * dt;
       this.phi = THREE.MathUtils.clamp(this.phi + this.vPhi * dt, 0.28, 1.45);
       this.orbitAccum += (Math.abs(this.vTheta) + Math.abs(this.vPhi)) * dt;
-      this.vTheta *= Math.pow(0.06, dt);
-      this.vPhi *= Math.pow(0.06, dt);
     }
+    // decay runs during a held press too — a hand that stops moving before it
+    // lifts must not release a flick it no longer owns
+    this.vTheta *= Math.pow(0.06, dt);
+    this.vPhi *= Math.pow(0.06, dt);
     this.radius = THREE.MathUtils.clamp(
       this.radius + this.vRadius * dt * 60,
       this.sceneMeters * 0.18,

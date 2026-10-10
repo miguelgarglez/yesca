@@ -51,10 +51,13 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
     }
   };
 
-  // a refused clipboard unmounts the focused button — land the hand on retry
+  // a refused clipboard unmounts the focused button — land the hand on retry;
+  // a successful retry unmounts THAT button — land back on send
   useEffect(() => {
     if (copied === "err")
       sheetRef.current?.querySelector<HTMLElement>(".sheet-retry")?.focus();
+    else if (copied === "ok")
+      sheetRef.current?.querySelector<HTMLElement>(".sheet-actions button")?.focus();
   }, [copied]);
 
   useEffect(() => {
@@ -158,9 +161,16 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
   if (!open && !linger) return null;
   const anchored = anchor
     ? {
-        // grow from the chip everywhere — on narrow screens clamp inside the viewport
+        // grow from the chip everywhere — clamp inside the viewport, and never
+        // let the card's top walk off a short or landscape screen
         left: Math.max(12, Math.min(anchor.x, window.innerWidth - Math.min(window.innerWidth * 0.88, 620) - 12)),
-        bottom: window.innerHeight - anchor.y + 14,
+        bottom: Math.max(
+          12,
+          Math.min(
+            window.innerHeight - anchor.y + 14,
+            window.innerHeight - (Math.min(window.innerWidth * 0.88, 620) * 0.5625 + 80) - 12,
+          ),
+        ),
       }
     : undefined;
   return (
@@ -171,7 +181,7 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="share this hillside"
-        style={anchored ? { position: "fixed", ...anchored, transform: "none" } : undefined}
+        style={anchored ? { position: "fixed", ...anchored } : undefined}
       >
         <canvas ref={ref} width={W} height={H} />
         <div className="sheet-row">

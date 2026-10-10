@@ -94,12 +94,26 @@ export default function App() {
   guideStepRef.current = guideStep;
   const [burnsOn, setBurnsOn] = useState(false);
   const [hotspots, setHotspots] = useState<Hotspot[] | null>(null);
+  const hotspotsPartial = useRef(false);
   const [soundOn, setSoundOn] = useState(() => localStorage.getItem("yesca.sound") === "1");
   const [shareOpen, setShareOpen] = useState(false);
   const [shareAnchor, setShareAnchor] = useState<{ x: number; y: number } | null>(null);
   const [placesOpen, setPlacesOpen] = useState(false);
   const [burntKm2, setBurntKm2] = useState(0);
-  const [hoverTag, setHoverTag] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [hoverTag, setHoverTag] = useState<{ x: number; y: number; text: string; out?: boolean } | null>(null);
+  const whisperSeq = useRef(0);
+  // a whisper leaves the way it arrived — a short fade, and a second tap
+  // replaces it cleanly instead of racing its timers
+  const whisperTag = (x: number, y: number, text: string, ms: number) => {
+    const id = ++whisperSeq.current;
+    setHoverTag({ x, y, text });
+    setTimeout(() => {
+      if (id === whisperSeq.current) setHoverTag((h) => (h ? { ...h, out: true } : h));
+    }, ms);
+    setTimeout(() => {
+      if (id === whisperSeq.current) setHoverTag(null);
+    }, ms + 180);
+  };
   const [offline, setOffline] = useState(!navigator.onLine);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeOut, setNoticeOut] = useState(false);
@@ -119,7 +133,7 @@ export default function App() {
   };
   const readyRef = useRef<Ready | null>(null);
   const placeRef = useRef<Place>(DEFAULT_PLACE);
-  const burnsCache = useRef(new Map<string, Hotspot[]>());
+  const burnsCache = useRef(new Map<string, { points: Hotspot[]; partial: boolean }>());
   const crackleRef = useRef(new Crackle());
   const haptics = useRef(new WebHaptics());
   const struckOnce = useRef(false);
@@ -139,6 +153,7 @@ export default function App() {
       const r = readyRef.current;
       if (r) {
         r.stage.idleDrift = !mq.matches;
+        r.fx.density = mq.matches ? 0.35 : 1; // ambient embers thin out too
         if (mq.matches) r.stage.settle();
       }
     };
@@ -203,10 +218,12 @@ export default function App() {
       setPlace(p);
       setWeather(wx);
       const pk = `${p.lat.toFixed(4)},${p.lon.toFixed(4)}`;
-      setHotspots(burnsCache.current.get(pk) ?? null);
+      const cached = burnsCache.current.get(pk);
+      setHotspots(cached?.points ?? null);
+      hotspotsPartial.current = cached?.partial ?? false;
       setBurnsOn(false);
       r.stage.hotspotShow = false;
-      r.stage.setHotspots(burnsCache.current.get(pk) ?? []);
+      r.stage.setHotspots(cached?.points ?? []);
       history.replaceState(null, "", hashForPlace(p));
     } catch (e) {
       if (seq !== loadSeq.current) return;
@@ -381,32 +398,36 @@ export default function App() {
     if (!canvas || !r) return;
     const { stage, sim, fx } = r;
     let gatePick: ReturnType<Stage["pick"]> = null;
-    stage.orbitGate = (e) => {
-      gatePick = stage.pick(e.clientX, e.clientY); // one raycast per press, shared
-      // while the tour teaches orbit, every first drag orbits — a press that
-      // happens to land on terrain must not silently skip the strike lesson
+    stage.orbitGate = () => {
+      // the capture-phase handler already raycast THIS press — reading it here
+      // (bubble phase) shares the hit; a stale pick can never mark old terrain
       return toolRef.current === "orbit" || !gatePick || guideStepRef.current === "orbit";
     };
 
     let stroke: { u: number; v: number }[] = [];
-    let active = false;
+    let paintId = -1; // one brush at a time — a second finger can't hijack a stroke
     let lastRain = 0;
     let hoverAt = 0;
 
-    let pressPt: { x: number; y: number; type: string } | null = null;
+    let pressPt: { x: number; y: number; id: number } | null = null;
     const down = (e: PointerEvent) => {
-      pressPt = { x: e.clientX, y: e.clientY, type: e.pointerType };
+      const p = stage.pick(e.clientX, e.clientY);
+      gatePick = p; // fresh every press, before any branch consumes it
       const t = toolRef.current;
-      if (t === "orbit" || guideStepRef.current === "orbit") return;
-      const p = gatePick ?? stage.pick(e.clientX, e.clientY);
-      gatePick = null;
+      if (t === "orbit" || guideStepRef.current === "orbit") {
+        if (!pressPt) pressPt = { x: e.clientX, y: e.clientY, id: e.pointerId };
+        return;
+      }
+      if (paintId !== -1) return;
       if (!p) return; // off-terrain presses fall through to orbit
       e.stopImmediatePropagation();
-      active = true;
+      paintId = e.pointerId;
       stroke = [{ u: p.u, v: p.v }];
       if (t === "match") {
         sim.stamp(3, stroke, 5);
         fx.strike(stroke, sim.wind); // first-contact spark — light and sound agree
+      } else if (t === "break") {
+        sim.stamp(1, stroke, 10); // the cut answers contact, not just the drag
       } else if (t === "rain") {
         sim.stamp(2, stroke, 30, 0.9);
         fx.rain(p.u, p.v);
@@ -416,7 +437,7 @@ export default function App() {
     };
     const move = (e: PointerEvent) => {
       const t = toolRef.current;
-      if (!active) {
+      if (paintId === -1) {
         // whisper: how long ago did this cell burn?
         const now = performance.now();
         if (e.pointerType === "mouse" && now - hoverAt > 160) {
@@ -436,25 +457,26 @@ export default function App() {
         }
         return;
       }
+      if (e.pointerId !== paintId) return;
       const p = stage.pick(e.clientX, e.clientY);
       if (!p) return;
       const last = stroke[stroke.length - 1];
       if (last && Math.hypot(p.u - last.u, p.v - last.v) > 6 / 768) {
+        // densify so a fast hand leaves a continuous mark, not dots — the
+        // match scores and the firebreak cuts share the same interpolation
+        const d = Math.hypot(p.u - last.u, p.v - last.v);
+        const steps = Math.max(1, Math.ceil(d / (2 / 768)));
+        const dense: { u: number; v: number }[] = [];
+        for (let k = 1; k <= steps; k++) {
+          dense.push({ u: last.u + (p.u - last.u) * (k / steps), v: last.v + (p.v - last.v) * (k / steps) });
+        }
         stroke.push({ u: p.u, v: p.v });
         if (t === "match") {
-          // densify so the scored line is continuous, not dotted
-          const dense: { u: number; v: number }[] = [];
-          const d = Math.hypot(p.u - last.u, p.v - last.v);
-          const steps = Math.max(1, Math.ceil(d / (2 / 768)));
-          for (let k = 1; k <= steps; k++) {
-            dense.push({ u: last.u + (p.u - last.u) * (k / steps), v: last.v + (p.v - last.v) * (k / steps) });
-          }
           sim.stamp(3, dense, 5);
           fx.sputter(p.u, p.v);
+        } else if (t === "break") {
+          sim.stamp(1, dense, 10);
         }
-      }
-      if (t === "break" && stroke.length % 2 === 0) {
-        sim.stamp(1, stroke.slice(-4), 10);
       }
       if (t === "rain") {
         const now = performance.now();
@@ -470,7 +492,13 @@ export default function App() {
     const upEvt = (e: PointerEvent) => {
       advanceGuide(); // a drag that just ended may have carried the tilt home
       // touch has no hover — a tap on the relief whispers instead
-      if (!active && pressPt && e.pointerType === "touch" && toolRef.current === "orbit") {
+      if (
+        paintId === -1 &&
+        pressPt &&
+        e.pointerId === pressPt.id &&
+        e.pointerType === "touch" &&
+        toolRef.current === "orbit"
+      ) {
         const moved = Math.hypot(e.clientX - pressPt.x, e.clientY - pressPt.y);
         pressPt = null;
         if (moved < 9) {
@@ -479,19 +507,17 @@ export default function App() {
             const c = sim.cell(p.u, p.v);
             if (c[0]! >= 1.5 && c[2]! > 0) {
               const ago = Math.max(1, Math.round((sim.time - c[2]!) / 60));
-              setHoverTag({ x: e.clientX, y: e.clientY, text: `burned ${ago} min ago` });
-              setTimeout(() => setHoverTag(null), 3600);
+              whisperTag(e.clientX, e.clientY, `burned ${ago} min ago`, 3600);
             } else if (c[0]! > 0.5) {
-              setHoverTag({ x: e.clientX, y: e.clientY, text: "burning" });
-              setTimeout(() => setHoverTag(null), 2400);
+              whisperTag(e.clientX, e.clientY, "burning", 2400);
             }
           }
         }
         return;
       }
-      pressPt = null;
-      if (!active) return;
-      active = false;
+      if (pressPt?.id === e.pointerId) pressPt = null;
+      if (paintId === -1 || e.pointerId !== paintId) return;
+      paintId = -1;
       if (toolRef.current === "match" && stroke.length) {
         // a dragged match drops a line of fire along the last stretch,
         // then flares where the stroke ends
@@ -516,8 +542,10 @@ export default function App() {
       if (toolRef.current === "break" && stroke.length) {
         sim.stamp(1, stroke, 10);
         brokeOnce.current = true;
+        nudge();
         advanceGuide();
       }
+      if (toolRef.current === "rain" && stroke.length) nudge();
       stroke = [];
       e.stopImmediatePropagation();
     };
@@ -525,9 +553,9 @@ export default function App() {
     // an orbit cancel falls through so Stage can release its own drag;
     // swallowing it would leave `dragging` stuck and the land still turning
     const cancelEvt = (e: PointerEvent) => {
-      pressPt = null;
-      if (!active) return;
-      active = false;
+      if (pressPt?.id === e.pointerId) pressPt = null;
+      if (paintId === -1 || e.pointerId !== paintId) return;
+      paintId = -1;
       stroke = [];
       e.stopImmediatePropagation();
     };
@@ -535,7 +563,11 @@ export default function App() {
     canvas.addEventListener("pointermove", move, true);
     canvas.addEventListener("pointerup", upEvt, true);
     canvas.addEventListener("pointercancel", cancelEvt, true);
-    const leave = () => setHoverTag(null);
+    // the whisper fades out under the leaving hand rather than cutting away
+    const leave = () => {
+      setHoverTag((h) => (h ? { ...h, out: true } : h));
+      setTimeout(() => setHoverTag((h) => (h?.out ? null : h)), 200);
+    };
     canvas.addEventListener("pointerleave", leave);
     return () => {
       canvas.removeEventListener("pointerdown", down, true);
@@ -626,7 +658,7 @@ export default function App() {
           5200,
         );
       };
-      if (hotspots) call(hotspots.length);
+      if (hotspots) call(hotspots.length, hotspotsPartial.current);
       else {
         // lazy: the satellite pass only runs when someone looks
         const p = placeRef.current;
@@ -638,8 +670,12 @@ export default function App() {
               flashNotice("the satellites aren't answering — try again later", 5200);
               return;
             }
-            burnsCache.current.set(pk, h.points);
+            burnsCache.current.set(pk, { points: h.points, partial: h.partial });
+            // a late answer belongs to the hillside that asked, not the one on screen
+            const still = `${placeRef.current.lat.toFixed(4)},${placeRef.current.lon.toFixed(4)}` === pk;
+            if (!still) return;
             setHotspots(h.points);
+            hotspotsPartial.current = h.partial;
             r.stage.setHotspots(h.points);
             call(h.points.length, h.partial);
           })
@@ -823,15 +859,24 @@ export default function App() {
           )}
 
           {hoverTag && (
-            <div className="hoverchip" style={{ left: hoverTag.x + 14, top: hoverTag.y - 10 }}>
+            <div
+              className={`hoverchip${hoverTag.out ? " out" : ""}`}
+              style={{ left: Math.min(hoverTag.x + 14, innerWidth - 170), top: hoverTag.y - 10 }}
+            >
               {hoverTag.text}
             </div>
           )}
 
           {offline && (
-            <div className="offline">no connection — the wind is a memory</div>
+            <div className="offline" role="status">
+              no connection — the wind is a memory
+            </div>
           )}
-          {notice && <div className={`offline${noticeOut ? " out" : ""}`}>{notice}</div>}
+          {notice && (
+            <div className={`offline${noticeOut ? " out" : ""}`} role="status" aria-live="polite">
+              {notice}
+            </div>
+          )}
 
           {switching && (
             <div className="switching">

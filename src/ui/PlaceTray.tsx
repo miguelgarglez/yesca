@@ -37,15 +37,20 @@ export function PlaceTray({ open, onClose, onPick, place, onGuide }: Props) {
     return () => clearTimeout(t);
   }, [open]);
 
+  // onClose changes identity on every parent render — read it through a ref so
+  // a stats tick can't tear the focus lifecycle down and rebuild it mid-typing
+  const latest = useRef({ onClose });
+  latest.current = { onClose };
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") latest.current.onClose();
     };
     const onDown = (e: PointerEvent) => {
       const el = e.target as HTMLElement;
       // the trigger button itself toggles — don't let outside-click race it
-      if (rootRef.current && !rootRef.current.contains(el) && !el.closest(".place-btn")) onClose();
+      if (rootRef.current && !rootRef.current.contains(el) && !el.closest(".place-btn"))
+        latest.current.onClose();
     };
     addEventListener("keydown", onKey);
     addEventListener("pointerdown", onDown);
@@ -55,13 +60,17 @@ export function PlaceTray({ open, onClose, onPick, place, onGuide }: Props) {
       removeEventListener("pointerdown", onDown);
       (document.querySelector(".place-btn") as HTMLElement | null)?.focus();
     };
-  }, [open, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     const s = q.trim();
     if (s.length < 3) {
+      // a cleared search stays cleared — older in-flight requests are dead
+      seq.current++;
       setResults([]);
       setSearching(false);
+      setFailed(false);
       return;
     }
     setSearching(true);
