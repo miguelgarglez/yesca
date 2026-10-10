@@ -18,13 +18,17 @@ const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 export function playExit(el: HTMLElement | null, ms: number, toTransform?: string) {
   if (!el) return;
   // read before cancelling — if an enter clip is mid-flight its live value
-  // is what is on screen, and the exit must start there
+  // is what is on screen, and the exit must start there. getComputedStyle
+  // returns a LIVE declaration: snapshot into strings before cancel(), or the
+  // keyframe records the .out end pose it just caused
   const cs = getComputedStyle(el);
+  const opacity = cs.opacity;
+  const transform = cs.transform;
   clips.get(el)?.a.cancel();
   const a = el.animate(
     [
-      { opacity: cs.opacity, transform: cs.transform },
-      { opacity: "0", transform: toTransform ?? cs.transform },
+      { opacity, transform },
+      { opacity: "0", transform: toTransform ?? transform },
     ],
     { duration: reduced() ? 1 : ms, easing: easeOut, fill: "forwards" },
   );
@@ -35,11 +39,15 @@ export function reenter(el: HTMLElement | null, ms: number, restTransform = "non
   if (!el) return;
   const prev = clips.get(el);
   if (!prev) return; // nothing in flight — the CSS entrance is already honest
-  const cs = getComputedStyle(el); // the exit clip's live value
+  // the declaration is live — snapshot before cancel() or the keyframe
+  // stores the .out end pose the cancel just revealed
+  const cs = getComputedStyle(el);
+  const opacity = cs.opacity;
+  const transform = cs.transform;
   prev.a.cancel();
   const a = el.animate(
     [
-      { opacity: cs.opacity, transform: cs.transform },
+      { opacity, transform },
       { opacity: "1", transform: restTransform },
     ],
     { duration: reduced() ? 1 : ms, easing: easeOut, fill: "forwards" },

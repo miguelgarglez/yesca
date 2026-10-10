@@ -1,8 +1,11 @@
-// r16: reopening inside an exit window must ride the live value back —
-// the enter clip's first keyframe has to be the computed style at the
-// instant of reopen (a live matrix or end-state), never the entrance's
-// declared `from`. reads are synchronous with the trigger so wall-clock
-// drift under sim load can't move the sample.
+// r16/r17: reopening inside an exit window must ride the live value back.
+// the discriminant is airtight: the exit clip is seeked to 45% (synchronous —
+// currentTime assignment lands on the next style recalc, which
+// getComputedStyle forces), the live value is read, and the reopen fires in
+// the SAME task. nothing renders between the two reads, so the enter clip's
+// first keyframe must equal that sampled value exactly — not 0, not the
+// .out end pose. (a live CSSStyleDeclaration read after cancel() records the
+// end pose — that was the r16 bug this probe exists to catch.)
 import { chromium } from "playwright";
 
 const url = process.argv[2] ?? "http://localhost:4421/";
@@ -22,17 +25,15 @@ const check = (name, ok, detail) => {
   console.log(`${ok ? "PASS" : "FAIL"} ${name}`, detail ?? "");
 };
 
-// open → settle → close → wait for .out commit → read live → reopen → the
-// newest WAAPI clip's `from` must equal that live value and `to` must be the
-// rest pose (opacity 1). a fresh CSS entrance would be a CSSAnimation and
-// would carry its declared from — never a live matrix.
-const reopenProbe = (sel, openSel, closeExpr, entranceFrom, outSel) => `
+// settle → close → wait .out + exit clip → seek clip to 45% → read live →
+// reopen synchronously → enter clip's keyframe[0] === live, keyframe[-1] === rest
+const reopenProbe = (sel, openExpr, closeExpr, reopenExpr, outSel) => `
 (async () => {
   const q = (s) => document.querySelector(s);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const waapi = (el) => el.getAnimations().filter((a) => a.constructor.name === "Animation");
+  if (!q(${JSON.stringify(sel)})) { ${openExpr} }
   const t0 = performance.now();
-  q(${JSON.stringify(openSel)}).click();
   let el = null;
   while (performance.now() - t0 < 4000) {
     el = q(${JSON.stringify(sel)});
@@ -41,43 +42,50 @@ const reopenProbe = (sel, openSel, closeExpr, entranceFrom, outSel) => `
   }
   if (!el) return { err: "no element after open" };
   ${closeExpr}
-  // wait for the .out commit — proves React applied the close state
   const t1 = performance.now();
-  while (performance.now() - t1 < 400) {
+  while (performance.now() - t1 < 600) {
     if (q(${JSON.stringify(outSel ?? sel)})?.classList.contains("out")) break;
     await sleep(8);
   }
   const exitEl = q(${JSON.stringify(sel)});
   if (!exitEl) return { err: "unmounted before .out" };
   if (!q(${JSON.stringify(outSel ?? sel)})?.classList.contains("out")) return { err: ".out never committed" };
-  if (!waapi(exitEl).length) return { err: "no exit clip" };
-  const cs = getComputedStyle(exitEl);
+  const exits = waapi(exitEl);
+  if (!exits.length) return { err: "no exit clip" };
+  const exitAnim = exits[exits.length - 1];
+  const dur = exitAnim.effect.getComputedTiming().duration;
+  exitAnim.currentTime = dur * 0.45;          // deterministic mid-exit
+  const cs = getComputedStyle(exitEl);        // forces recalc at the seeked time
   const live = { o: parseFloat(cs.opacity), t: cs.transform };
-  q(${JSON.stringify(openSel)}).click();          // reopen — sync capture
-  const anims = waapi(exitEl);
-  const enter = anims[anims.length - 1];
+  if (!(live.o > 0.05 && live.o < 0.98)) return { err: "seek gave vacuous sample", live, dur };
+  ${reopenExpr}
+  const enters = waapi(exitEl);
+  const enter = enters[enters.length - 1];
   const kf = enter ? enter.effect.getKeyframes() : [];
   return {
     live,
     clipFrom: kf[0] ? { o: kf[0].opacity, t: kf[0].transform } : null,
-    clipTo: kf[1] ? { o: kf[1].opacity, t: kf[1].transform } : null,
-    entranceFrom: ${JSON.stringify(entranceFrom)},
+    clipTo: kf[kf.length - 1] ? { o: kf[kf.length - 1].opacity, t: kf[kf.length - 1].transform } : null,
   };
 })()`;
 
-const ridesLive = (r) => {
-  if (r.err || !r.clipFrom || r.clipTo?.o !== "1") return false;
-  // the discriminant: a WAAPI clip animating TO the rest pose exists at all —
-  // a bare CSS entrance replay produces none — and its `from` is a serialized
-  // computed value (a matrix / numeric opacity), never the entrance's
-  // declared starting transform. wall-clock drift can move which live value
-  // was captured, but never what kind of value it is.
-  return r.clipFrom.t !== r.entranceFrom;
-};
+// same task → the captured keyframe must equal the sampled live value exactly,
+// and it must be a real mid-exit number — "0" is the .out end pose, i.e. the bug
+const ridesLive = (r) =>
+  !r.err &&
+  r.clipFrom &&
+  r.clipTo?.o === "1" &&
+  Math.abs(parseFloat(r.clipFrom.o) - r.live.o) < 1e-3 &&
+  r.clipFrom.t === r.live.t;
 
 // ============ 1. place tray ============
 const tray = await page.evaluate(
-  reopenProbe(".placetray", ".place-btn", "q('.place-btn').click();", "scale(0.96) translateY(-6px)"),
+  reopenProbe(
+    ".placetray",
+    "q('.place-btn').click();",
+    "q('.place-btn').click();",
+    "q('.place-btn').click();",
+  ),
 );
 check("tray reopen rides live value", ridesLive(tray), JSON.stringify(tray));
 await page.evaluate(() => document.querySelector(".placetray") && document.querySelector(".place-btn").click());
@@ -106,9 +114,9 @@ if (!(await page.evaluate(() => !!document.querySelector(".sharechip")))) {
   const sheet = await page.evaluate(
     reopenProbe(
       ".sheet",
-      ".sharechip",
+      "q('.sharechip').click();",
       "window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));",
-      "translateY(14px) scale(0.96) rotate(-0.6deg)",
+      "q('.sharechip').click();",
       ".sheet-back",
     ),
   );
@@ -121,47 +129,29 @@ if (!(await page.evaluate(() => !!document.querySelector(".sharechip")))) {
 await page.keyboard.press("?"); // ensure it's running (idempotent at orbit)
 await page.waitForSelector(".guide:not(.out)", { timeout: 8000 });
 await page.waitForTimeout(300);
-const guideRe = await page.evaluate(async () => {
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const waapi = (el) => el.getAnimations().filter((a) => a.constructor.name === "Animation");
-  const el = document.querySelector(".guide");
-  document.querySelector(".g-skip").click(); // exit clip starts
-  const t1 = performance.now();
-  while (performance.now() - t1 < 500) {
-    if (el.classList.contains("out") && waapi(el).length) break;
-    await sleep(8);
-  }
-  if (!el.isConnected) return { err: "guide unmounted" };
-  if (!waapi(el).length) return { err: "no exit clip" };
-  const cs = getComputedStyle(el);
-  const live = { o: parseFloat(cs.opacity), t: cs.transform };
-  window.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
-  const anims = waapi(el);
-  const enter = anims[anims.length - 1];
-  const kf = enter ? enter.effect.getKeyframes() : [];
-  // .replay commits async — poll for it
-  const t2 = performance.now();
-  while (performance.now() - t2 < 600) {
-    if (el.classList.contains("replay")) break;
-    await sleep(15);
-  }
-  return {
-    live,
-    cls: el.className,
-    delay: getComputedStyle(el).animationDelay,
-    clipFrom: kf[0] ? { o: kf[0].opacity, t: kf[0].transform } : null,
-    clipTo: kf[1] ? { o: kf[1].opacity, t: kf[1].transform } : null,
-  };
-});
-check(
-  "guide replay mid-exit rides live value",
-  !!guideRe.clipFrom && guideRe.clipTo?.o === "1",
-  JSON.stringify(guideRe),
+const guideRe = await page.evaluate(
+  reopenProbe(
+    ".guide",
+    "",
+    "document.querySelector('.g-skip').click();",
+    "window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }));",
+  ),
 );
+// the reopen polls .replay landing too — re-read class + delay
+const guideMeta = await page.evaluate(async () => {
+  const el = document.querySelector(".guide");
+  const t0 = performance.now();
+  while (performance.now() - t0 < 600) {
+    if (el?.classList.contains("replay")) break;
+    await new Promise((r) => setTimeout(r, 15));
+  }
+  return { cls: el?.className, delay: el ? getComputedStyle(el).animationDelay : null };
+});
+check("guide replay mid-exit rides live value", ridesLive(guideRe), JSON.stringify(guideRe));
 check(
   "guide replay drops the first-appearance delay",
-  guideRe.cls?.includes("replay") && guideRe.delay === "0s",
-  `delay=${guideRe.delay} cls=${guideRe.cls}`,
+  guideMeta.cls?.includes("replay") && guideMeta.delay === "0s",
+  `delay=${guideMeta.delay} cls=${guideMeta.cls}`,
 );
 
 // ============ 4. toast leave retraces its entrance (+8px, not -4px) ============
@@ -177,44 +167,15 @@ const connEnd = await page.evaluate(() => {
 check("toast leave retraces its entrance (+8px)", connEnd?.includes("translateY(8px)"), connEnd ?? "rule missing");
 
 // ============ 5. conn banner re-drop mid-exit ============
-const connRe = await page.evaluate(async () => {
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const waapi = (el) => el.getAnimations().filter((a) => a.constructor.name === "Animation");
-  window.dispatchEvent(new Event("offline"));
-  let el = null;
-  const t0 = performance.now();
-  while (performance.now() - t0 < 2000) {
-    el = document.querySelector(".conn");
-    if (el) break;
-    await sleep(20);
-  }
-  if (!el) return { err: "no banner" };
-  window.dispatchEvent(new Event("online")); // exit starts
-  const t1 = performance.now();
-  while (performance.now() - t1 < 300) {
-    if (el.classList.contains("out") && waapi(el).length) break;
-    await sleep(8);
-  }
-  if (!el.isConnected) return { err: "banner unmounted" };
-  if (!waapi(el).length) return { err: "no exit clip" };
-  const cs = getComputedStyle(el);
-  const live = { o: parseFloat(cs.opacity), t: cs.transform };
-  window.dispatchEvent(new Event("offline")); // reenter
-  const anims = waapi(el);
-  const enter = anims[anims.length - 1];
-  const kf = enter ? enter.effect.getKeyframes() : [];
-  return {
-    live,
-    cls: el.className,
-    clipFrom: kf[0] ? { o: kf[0].opacity, t: kf[0].transform } : null,
-    clipTo: kf[1] ? { o: kf[1].opacity, t: kf[1].transform } : null,
-  };
-});
-check(
-  "conn reenter rides live value",
-  !!connRe.clipFrom && connRe.clipTo?.o === "1",
-  JSON.stringify(connRe),
+const connRe = await page.evaluate(
+  reopenProbe(
+    ".conn",
+    "window.dispatchEvent(new Event('offline'));",
+    "window.dispatchEvent(new Event('online'));",
+    "window.dispatchEvent(new Event('offline'));",
+  ),
 );
+check("conn reenter rides live value", ridesLive(connRe), JSON.stringify(connRe));
 await page.evaluate(() => window.dispatchEvent(new Event("online")));
 
 console.log("errors:", JSON.stringify(errors));

@@ -240,10 +240,11 @@ void main() {
   float cut = (1.0 - smoothstep(0.05, 0.25, fu.r)) * step(0.5, fu.g);
   col = mix(col, uChar * 0.55, cut * 0.85);
 
-  // match scratch: a dark groove scored into the land, glinting like struck flint
+  // match scratch: one scored groove — a dark seam the whole length, with a
+  // dim ember bed running inside it and flicker on top, not loose sparks
   float scratch = clamp(fu.b, 0.0, 1.0);
-  vec3 ground = mix(col, uChar * 0.6, scratch * 0.62);
-  ground += uEmber * scratch * vnoise(vUv * 260.0 + uTime * 2.2) * 0.34;
+  vec3 ground = mix(col, uChar * 0.55, scratch * 0.7);
+  ground += uEmber * scratch * (0.16 + 0.28 * vnoise(vUv * 260.0 + uTime * 2.2));
   col = ground;
 
   // burn states — feathered rim via neighbourhood taps, not a sawtooth edge
@@ -253,10 +254,11 @@ void main() {
   nb += step(1.5, texture(uState, fuv + vec2(0.0, uTexel.y * 2.5)).r);
   nb += step(1.5, texture(uState, fuv - vec2(0.0, uTexel.y * 2.5)).r);
   if (st.r > 1.5) {
-    // burnt: char with ash mottling, cooling embers
+    // burnt: char that keeps the relief — a warm ash floor so shade never
+    // drops to a hole, and the ridges still catch the raking sun
     float mot = vnoise(vUv * 46.0 + vec2(hash(floor(vUv * 8.0)), hash(floor(vUv * 8.0) + 19.7)) * 9.0);
-    vec3 c = mix(uChar, uAsh, smoothstep(0.45, 0.8, mot) * 0.35);
-    vec3 burnCol = c * (0.25 + 0.45 * dif);
+    vec3 c = mix(uChar, uAsh, smoothstep(0.4, 0.8, mot) * 0.5);
+    vec3 burnCol = c * vec3(1.08, 0.95, 0.84) * (0.30 + 0.30 * sky + 1.0 * pow(dif, 1.2));
     float mask = smoothstep(0.1, 0.9, (nb + 1.0) / 5.0);
     col = mix(col, burnCol, mask);
     // fresh char radiates along the rim for a few sim-seconds

@@ -175,8 +175,11 @@ export class FX {
     info.needsUpdate = true;
   }
 
+  private flareBase = new THREE.Vector3();
+
   /** the moment a match catches */
   flareAt(point: THREE.Vector3) {
+    this.flareBase.copy(point);
     this.flare.position.copy(point);
     this.flare.position.y += this.stage.sceneMeters * 0.012;
     this.flareT = 0;
@@ -233,6 +236,10 @@ export class FX {
       this.flareT = Math.min(1, this.flareT + dt / 0.55);
       const s = this.stage.sceneMeters * 0.02 * (0.4 + this.flareT * 2.2);
       this.flare.scale.set(s, s, 1);
+      // the light sinks onto the contact as it dies — it lands where the
+      // fire front is already running, not above it
+      this.flare.position.copy(this.flareBase);
+      this.flare.position.y += this.stage.sceneMeters * 0.012 * (1 - this.flareT * 0.75);
       // a hard white core for the first ~70ms, then the amber bloom
       this.flareMat.opacity = this.flareT < 0.13 ? 1.0 : (1 - this.flareT) * 0.9;
       if (this.flareT >= 1) this.flare.visible = false;

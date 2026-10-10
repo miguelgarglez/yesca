@@ -602,6 +602,11 @@ export default function App() {
         const wp = stage.worldAt(last.u, last.v);
         fx.strike(stroke.slice(-48), sim.wind);
         fx.flareAt(wp);
+        // as the flare sinks onto the contact it hands off to a wider
+        // ignition — the catch blooms from where the light landed
+        setTimeout(() => {
+          if (readyRef.current?.sim === sim) sim.stamp(0, [last], 16);
+        }, 150);
         if (!reduced.current) stage.nudgeFocus(wp);
         crackleRef.current.strike();
         nudge();
@@ -680,6 +685,11 @@ export default function App() {
           const c = hit ? { u: hit.u, v: hit.v } : { u: 0.5, v: 0.5 };
           if (t === "match") {
             r.sim.stamp(0, [c], 11);
+            // the flare dies into the contact — a second, wider catch lands
+            // as the light collapses
+            setTimeout(() => {
+              if (readyRef.current?.sim === r.sim) r.sim.stamp(0, [c], 16);
+            }, 150);
             if (hit) {
               r.fx.flareAt(hit.point);
               if (!reduced.current) r.stage.nudgeFocus(hit.point);

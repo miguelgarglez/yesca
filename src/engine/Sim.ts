@@ -255,6 +255,7 @@ export class Sim {
       this.runPass(this.clearMat, rt);
     }
     this.stampQueue.length = 0;
+    this.lastStamp = [null, null, null, null];
     this.time = 0;
     this.acc = 0;
     this.level = 0;
@@ -267,11 +268,41 @@ export class Sim {
     this.gl.setRenderTarget(null);
   }
 
+  /** last stamped uv per mode — consecutive stamp() calls from one gesture
+   *  arrive as separate batches; chaining them fills the seam between the
+   *  previous call's tail and this call's head or every event leaves a gap */
+  private lastStamp: ({ u: number; v: number } | null)[] = [null, null, null, null];
+
   /** queue a brush stroke; mode 0=ignite 1=firebreak 2=rain 3=scratch */
   stamp(mode: 0 | 1 | 2 | 3, points: { u: number; v: number }[], radiusPx: number, strength = 1) {
+    const r = radiusPx / N;
+    const last = this.lastStamp[mode];
+    // bridge to the previous batch when it ends near where this one starts —
+    // a far jump is a new stroke, not a seam
+    const src =
+      last && points.length && Math.hypot(points[0]!.u - last.u, points[0]!.v - last.v) < r * 8
+        ? [last, ...points]
+        : points;
+    // a stroke is one groove, not a chain of discs — fill the gaps so the
+    // spacing stays well under the brush radius and the discs read as a band
+    const maxStep = r * 0.42;
+    const dense: { u: number; v: number }[] = [];
+    for (let i = 0; i < src.length; i++) {
+      const p = src[i]!;
+      const q = src[i + 1];
+      dense.push(p);
+      if (!q) break;
+      const gap = Math.hypot(q.u - p.u, q.v - p.v);
+      const n = Math.ceil(gap / maxStep);
+      for (let k = 1; k < n; k++) {
+        const t = k / n;
+        dense.push({ u: p.u + (q.u - p.u) * t, v: p.v + (q.v - p.v) * t });
+      }
+    }
+    if (points.length) this.lastStamp[mode] = points[points.length - 1]!;
     // a stroke longer than one batch is split, not strided — every point lands
-    for (let i = 0; i < points.length; i += 64) {
-      const pts = points
+    for (let i = 0; i < dense.length; i += 64) {
+      const pts = dense
         .slice(i, i + 64)
         .map((p) => new THREE.Vector4(p.u, p.v, radiusPx / N, strength));
       if (pts.length) this.stampQueue.push({ mode, pts });
