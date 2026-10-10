@@ -40,7 +40,10 @@ function tileUrl(layer: string, date: string, row: number, col: number) {
  */
 export async function fetchHotspots(place: Place): Promise<HotspotResult> {
   const dates: string[] = [];
-  for (let d = 0; d < 4; d++) {
+  // start at yesterday: GIBS publishes the daily layer with hours of lag, and a
+  // not-yet-published date answers without CORS headers — console noise we can
+  // simply never ask for
+  for (let d = 1; d < 5; d++) {
     const t = new Date(Date.now() - d * 86400000);
     dates.push(t.toISOString().slice(0, 10));
   }

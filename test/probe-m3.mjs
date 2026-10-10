@@ -14,12 +14,19 @@ await page.goto(url);
 await page.waitForSelector(".instruments", { timeout: 30000 });
 await page.waitForTimeout(3000);
 
-// step 1: orbit the terrain to advance the guide
-await page.mouse.move(640, 380);
-await page.mouse.down();
-await page.mouse.move(760, 320, { steps: 12 });
-await page.mouse.up();
-await page.waitForTimeout(1200);
+// step 1: orbit the terrain to advance the guide — repeat until the lesson moves on
+for (let k = 0; k < 8; k++) {
+  const done = await page.evaluate(() =>
+    document.querySelector(".g-line")?.textContent.includes("match"));
+  if (done) break;
+  await page.mouse.move(640, 380);
+  await page.mouse.down();
+  await page.mouse.move(760, 320, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(700);
+}
+await page.waitForFunction(() =>
+  document.querySelector(".g-line")?.textContent.includes("match"), { timeout: 8000 });
 await page.screenshot({ path: "/tmp/y-m3-guide2.png" });
 
 // step 2: match strike — press and drag on the terrain
@@ -79,10 +86,11 @@ const hash = await page.evaluate(() => location.hash);
 console.log("hash:", hash);
 
 // share sheet — the chip only exists once the hillside is scarred
-await page.evaluate(() => window.__yesca.ignite(0.5, 0.5));
+await page.evaluate(() => { window.__yesca.ignite(0.5, 0.5); window.__yesca.ignite(0.42, 0.55); });
 await page.waitForFunction(() => window.__yesca.stats().burnt > 0.0002, { timeout: 25000 })
   .catch(() => page.evaluate(() => window.__yesca.ignite(0.44, 0.42)));
-await page.waitForSelector(".sharechip", { timeout: 25000 });
+// the chip gates on burnt > 0.004 km² — tonight's 5 km/h wind needs a while
+await page.waitForSelector(".sharechip", { timeout: 90000 });
 await page.click(".sharechip");
 await page.waitForTimeout(1200);
 await page.screenshot({ path: "/tmp/y-m3-share.png" });
