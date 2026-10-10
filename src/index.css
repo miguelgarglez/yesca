@@ -104,15 +104,18 @@ canvas.stage[data-tool="rain"] { cursor: s-resize; }
   pointer-events: none;
   z-index: 20;
 }
-/* no chrome before world: HUD waits for the milling front to light the relief */
+/* no chrome before world: HUD waits for the milling front to light the relief —
+   the lesson included: a sentence about the land arrives with the land */
 body:not(.revealed) .masthead,
 body:not(.revealed) .instruments,
 body:not(.revealed) .rail,
+body:not(.revealed) .guide,
 body:not(.revealed) .tray { opacity: 0; visibility: hidden; }
 body.revealed .masthead { animation: hud-in 700ms var(--ease-out) 150ms backwards; }
 body.revealed .instruments { animation: hud-in 700ms var(--ease-out) 500ms backwards; }
 body.revealed .rail { animation: hud-in 700ms var(--ease-out) 650ms backwards; }
 body.revealed .tray { animation: hud-in-c 700ms var(--ease-out) 300ms backwards; }
+body.revealed .guide { animation: hud-in-c 700ms var(--ease-out) 550ms backwards; }
 @keyframes hud-in {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
@@ -124,7 +127,10 @@ body.revealed .tray { animation: hud-in-c 700ms var(--ease-out) 300ms backwards;
   text-align: right; color: var(--bone);
   background: none; border: none; cursor: pointer; padding: 4px 0 4px 12px;
 }
-.place-btn small { display: block; opacity: 0.5; font-size: 10px; margin-top: 2px; }
+.place-btn small {
+  display: block; opacity: 0.7; font-size: 10px; margin-top: 2px;
+  text-shadow: 0 1px 8px rgba(0,0,0,0.8), 0 1px 3px rgba(0,0,0,0.9);
+}
 .place-btn .caret { display: inline-block; transition: transform 300ms var(--ease-out); }
 .place-btn[aria-expanded="true"] .caret { transform: rotate(180deg); }
 .place-btn:hover { opacity: 1; }
@@ -271,7 +277,7 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
 }
 .dock-brand span {
   font-family: "IBM Plex Mono", monospace; font-size: 10px;
-  letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.5;
+  letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.7;
   white-space: nowrap;
 }
 .tbtn {
@@ -298,6 +304,9 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
   background: var(--ember); box-shadow: 0 0 6px rgba(255,90,31,0.9);
   transform: translateX(-50%);
 }
+/* mid-lesson the dock arms only the taught tool — the rest sit out, visibly */
+.tbtn:disabled { opacity: 0.22; cursor: default; }
+.tbtn:disabled:hover { background: transparent; }
 .tbtn:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
 /* tool switch answer: a name the dock says once, then drops */
 .toolflash {
@@ -311,12 +320,12 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
   border: 1px solid rgba(233,225,206,0.08);
   border-radius: 999px; padding: 3px 10px;
   backdrop-filter: blur(6px);
-  animation: toolflash 1.3s var(--ease-out) both;
+  animation: toolflash 380ms var(--ease-out) both;
 }
 @keyframes toolflash {
   0% { opacity: 0; transform: translateX(-50%) translateY(5px); }
-  14% { opacity: 0.95; transform: translateX(-50%) translateY(0); }
-  70% { opacity: 0.95; }
+  20% { opacity: 0.95; transform: translateX(-50%) translateY(0); }
+  65% { opacity: 0.95; }
   100% { opacity: 0; transform: translateX(-50%) translateY(-4px); }
 }
 
@@ -353,6 +362,11 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
   flex: 1 1 auto; min-width: 0;
 }
 .g-k, .g-dots, .g-skip, .g-keys, .g-buzz { flex: none; }
+/* two rows on paper, one row on screen — the wrappers vanish until the phone
+   gives the sentence its own line and the controls the next */
+.g-top, .g-meta { display: contents; }
+/* TextMorph can't wrap — the phone swaps it for a plain twin of the lesson */
+.g-plain { display: none; }
 /* the pointer copy can't teach keys — this line exists only for tab users */
 .g-keys {
   display: none;
@@ -431,7 +445,10 @@ body.kb .g-keys { display: inline; }
   backdrop-filter: blur(10px);
   z-index: 35;
   animation: guide-in 400ms var(--ease-spring) both;
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
 }
+/* a status that arrives with motion leaves with motion too */
+.offline.out { opacity: 0; transform: translateX(-50%) translateY(-4px); }
 
 /* ---------- place tray ---------- */
 
@@ -474,7 +491,7 @@ body.kb .g-keys { display: inline; }
 .pt-sect {
   font-family: "IBM Plex Mono", monospace; font-size: 10px;
   letter-spacing: 0.2em; text-transform: uppercase;
-  opacity: 0.4; padding: 8px 8px 5px;
+  opacity: 0.7; padding: 8px 8px 5px;
 }
 .pt-list button {
   display: flex; width: 100%; justify-content: space-between; align-items: baseline;
@@ -502,7 +519,7 @@ body.kb .g-keys { display: inline; }
 .pt-list::-webkit-scrollbar-thumb { background: rgba(233,225,206,0.15); border-radius: 2px; }
 .pt-coords {
   font-family: "IBM Plex Mono", monospace; font-size: 10px;
-  letter-spacing: 0.12em; opacity: 0.45; padding: 4px 2px 0;
+  letter-spacing: 0.12em; opacity: 0.7; padding: 4px 2px 0;
 }
 .pt-foot {
   border-top: 1px solid rgba(233,225,206,0.08);
@@ -541,10 +558,16 @@ body.kb .g-keys { display: inline; }
   width: min(88vw, 620px);
   transform-origin: bottom left; /* grows out of the chip that summoned it */
   animation: sheet-in 380ms var(--ease-spring) backwards;
+  transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out);
 }
 @keyframes sheet-in {
   from { opacity: 0; transform: translateY(14px) scale(0.96) rotate(-0.6deg); }
   to { opacity: 1; transform: none; }
+}
+/* the close retraces the open — the card folds back toward the chip's corner */
+.sheet-back.out .sheet {
+  opacity: 0;
+  transform: scale(0.94) translateY(10px) rotate(-0.6deg);
 }
 .sheet canvas {
   width: 100%; height: auto; display: block;
@@ -577,11 +600,11 @@ body.kb .g-keys { display: inline; }
   font-family: "IBM Plex Mono", monospace; font-size: 11px;
   color: var(--bone); background: rgba(233,225,206,0.07);
   border: 1px solid rgba(233,225,206,0.25); border-radius: 6px;
-  padding: 6px 10px; width: 220px; max-width: 100%;
-}
-/* the failure row is as composed as the ideal one */
-@media (max-width: 560px) {
-  .sheet-url { width: 100%; flex: 1 1 100%; }
+  padding: 6px 10px;
+  /* the failure row is as composed as the ideal one — the URL takes its own
+     line at every width, not just on a phone */
+  flex: 1 1 100%;
+  max-width: 100%;
 }
 /* every secondary press answers while held */
 .place-btn:active { transform: translateY(1px); }
@@ -615,14 +638,20 @@ body.kb .g-keys { display: inline; }
   .pt-list button { min-height: 44px; }
   .place-btn { min-height: 44px; }
   .sheet-actions button, .sheet-actions a { min-height: 44px; display: inline-flex; align-items: center; }
-  .sharechip { left: 16px; bottom: 186px; min-height: 44px; display: inline-flex; align-items: center; }
+  /* rail tops out at 148+44=192 — the chip clears it with room to spare */
+  .sharechip { left: 16px; bottom: 204px; min-height: 44px; display: inline-flex; align-items: center; }
   .tray { bottom: 14px; padding: 6px 10px 6px 12px; }
   .dock-brand span { display: none; }
   .tbtn { width: 44px; height: 44px; }
-  .guide { bottom: 100px; max-width: 88vw; gap: 10px; }
-  /* the dots carry the step count; the kicker is what pushed the row wide */
+  /* the phone lesson is two rows: the sentence alone, then the controls —
+     a 44px target beside the sentence is what used to cut it in half */
+  .guide { bottom: 100px; max-width: 88vw; flex-direction: column; align-items: stretch; gap: 6px; }
   .guide .g-k { display: none; }
-  .g-line { overflow: hidden; text-overflow: ellipsis; }
+  .g-top { display: flex; align-items: baseline; gap: 10px; }
+  .g-meta { display: flex; align-items: center; gap: 14px; }
+  .g-meta .g-dots { margin-left: auto; }
+  .g-morph { display: none; }
+  .g-plain { display: inline; }
   .placetray { top: 56px; right: 16px; left: 16px; width: auto; }
 }
 
@@ -638,6 +667,7 @@ body.kb .g-keys { display: inline; }
   /* a 1ms run races to the last frame — these should be still, not invisible */
   .toolflash, .loading .bar i { animation: none; }
   /* decorative exits don't slide under reduce — they settle instantly */
-  .guide.out, .placetray.out, .sheet-back.out { transition-duration: 0.001ms; }
+  .guide.out, .placetray.out, .sheet-back.out,
+  .sheet-back.out .sheet, .offline.out { transition-duration: 0.001ms; }
   .vane .needle { transition-duration: 200ms; }
 }

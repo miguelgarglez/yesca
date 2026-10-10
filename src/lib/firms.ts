@@ -90,7 +90,13 @@ export async function fetchHotspots(place: Place): Promise<HotspotResult> {
     while ((job = urls.pop())) {
       try {
         const res = await fetch(job.url);
-        if (!res.ok) continue; // 404 = no detections in tile
+        if (!res.ok) {
+          // a 404 is an empty tile — the pass happened and found nothing;
+          // only other statuses count as coverage that never arrived
+          if (res.status === 404) decoded++;
+          else missed++;
+          continue;
+        }
         const buf = await res.arrayBuffer();
         const tile = new VectorTile(new PbfReader(buf));
         decoded++; // http-ok is not enough — only a decoded pass proves coverage

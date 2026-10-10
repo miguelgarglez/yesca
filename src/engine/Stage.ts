@@ -62,6 +62,7 @@ export class Stage {
   private vPhi = 0;
   private vRadius = 0;
   private dragging = false;
+  private lastMoveT = 0;
   private lastX = 0;
   private lastY = 0;
   private pinchD = 0;
@@ -309,9 +310,11 @@ export class Stage {
 
   /** a keyboard orbit — the tour's first lesson must be finishable without a pointer */
   nudgeOrbit() {
-    this.theta -= 0.09;
-    this.orbitAccum += 0.09;
-    this.vTheta = -0.6;
+    // one press carries the tilt home: the immediate step plus this coast's
+    // full decay (v / -ln 0.06 ≈ 0.48 rad) lands the gesture past 0.5
+    this.theta -= 0.12;
+    this.orbitAccum += 0.12;
+    this.vTheta = -1.35;
     this.lastInput = performance.now();
   }
 
@@ -325,6 +328,7 @@ export class Stage {
       this.focusT = 0;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
+      this.lastMoveT = performance.now();
       el.setPointerCapture(e.pointerId);
     });
     el.addEventListener("pointermove", (e) => {
@@ -334,13 +338,17 @@ export class Stage {
       const dy = e.clientY - this.lastY;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
-      // displacement is applied now; velocity (rad/s, ~60hz events) drives inertia
+      // velocity is measured between events, not assumed — a 120hz stream
+      // halves the per-event delta, so the coast must not halve with it
+      const now = performance.now();
+      const dtMove = Math.min(0.08, Math.max(0.004, (now - this.lastMoveT) / 1000));
+      this.lastMoveT = now;
       const dTheta = -dx * 0.0042;
       const dPhi = -dy * 0.0032;
       this.theta += dTheta;
       this.phi = THREE.MathUtils.clamp(this.phi + dPhi, 0.28, 1.45);
-      this.vTheta = dTheta * 60;
-      this.vPhi = dPhi * 60;
+      this.vTheta = dTheta / dtMove;
+      this.vPhi = dPhi / dtMove;
       this.orbitAccum += Math.abs(dTheta) + Math.abs(dPhi);
     });
     const up = (e: PointerEvent) => {

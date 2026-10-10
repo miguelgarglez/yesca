@@ -51,12 +51,38 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
     }
   };
 
+  // a refused clipboard unmounts the focused button — land the hand on retry
+  useEffect(() => {
+    if (copied === "err")
+      sheetRef.current?.querySelector<HTMLElement>(".sheet-retry")?.focus();
+  }, [copied]);
+
   useEffect(() => {
     if (!open) return;
     // a reopened sheet starts honest — last visit's failure must not linger
     setCopied("idle");
     const prev = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && latest.current.onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        latest.current.onClose();
+        return;
+      }
+      // tab stays inside the dialog — wrap at both ends
+      if (e.key !== "Tab" || !sheetRef.current) return;
+      const f = sheetRef.current.querySelectorAll<HTMLElement>(
+        'button, a[href], input, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!f.length) return;
+      const first = f[0]!;
+      const last = f[f.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     addEventListener("keydown", onKey);
     const ctx = ref.current?.getContext("2d");
     if (!ref.current || !ctx) return () => removeEventListener("keydown", onKey);
@@ -121,7 +147,10 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
     sheetRef.current?.querySelector<HTMLElement>(".sheet-actions button")?.focus();
     return () => {
       removeEventListener("keydown", onKey);
-      (document.querySelector(".sharechip") as HTMLElement | null)?.focus() ?? prev?.focus();
+      // focus() returns void — one call, not a chain that runs both branches
+      const chip = document.querySelector<HTMLElement>(".sharechip");
+      if (chip) chip.focus();
+      else prev?.focus();
     };
   }, [open]);
 

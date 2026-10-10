@@ -30,7 +30,9 @@ interface Props {
 }
 
 /** the guide is engraved on the instrument itself: a strip fused to the tool dock,
- *  teaching by waiting for the real gesture — never a floating card */
+ *  teaching by waiting for the real gesture — never a floating card.
+ *  the sentence keeps its own row so the verb survives a 375px screen;
+ *  TextMorph can't wrap, so the phone reads a plain twin of the same words */
 export function Guide({ step, closing, onSkip, buzzOn, onBuzz }: Props) {
   const last = useRef<Exclude<GuideStep, "done">>("orbit");
   if (step !== "done") last.current = step;
@@ -38,29 +40,36 @@ export function Guide({ step, closing, onSkip, buzzOn, onBuzz }: Props) {
   const c = COPY[step === "done" ? last.current : step];
   return (
     <div className={`guide${closing ? " out" : ""}`} role="status" aria-live="polite">
-      <span className="g-k">{c.k}</span>
-      <span className="g-line">
-        <TextMorph>{c.line}</TextMorph>
-      </span>
-      <span className="g-keys">{c.keys}</span>
-      {onBuzz && (
-        <button
-          className="g-buzz"
-          onClick={onBuzz}
-          aria-pressed={buzzOn}
-          title="haptic nudges — off if you prefer the land silent in your hand"
-        >
-          nudge {buzzOn ? "on" : "off"}
+      <div className="g-top">
+        <span className="g-k">{c.k}</span>
+        <span className="g-line">
+          <span className="g-morph">
+            <TextMorph>{c.line}</TextMorph>
+          </span>
+          <span className="g-plain">{c.line}</span>
+        </span>
+      </div>
+      <div className="g-meta">
+        <span className="g-keys">{c.keys}</span>
+        {onBuzz && (
+          <button
+            className="g-buzz"
+            onClick={onBuzz}
+            aria-pressed={buzzOn}
+            title="haptic nudges — off if you prefer the land silent in your hand"
+          >
+            nudge {buzzOn ? "on" : "off"}
+          </button>
+        )}
+        <span className="g-dots" aria-hidden>
+          {(["orbit", "strike", "break"] as const).map((s) => (
+            <i key={s} className={s === step || step === "done" ? "on" : ""} />
+          ))}
+        </span>
+        <button className="g-skip" onClick={onSkip} aria-label="skip the tour">
+          ×
         </button>
-      )}
-      <span className="g-dots" aria-hidden>
-        {(["orbit", "strike", "break"] as const).map((s) => (
-          <i key={s} className={s === step || step === "done" ? "on" : ""} />
-        ))}
-      </span>
-      <button className="g-skip" onClick={onSkip} aria-label="skip the tour">
-        ×
-      </button>
+      </div>
     </div>
   );
 }

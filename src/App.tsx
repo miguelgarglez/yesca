@@ -78,11 +78,13 @@ export default function App() {
   const [tool, setTool] = useState<Tool>("orbit");
   const toolRef = useRef<Tool>("orbit");
   toolRef.current = tool;
-  const [toolFlash, setToolFlash] = useState<{ n: number; x: number } | null>(null);
-  const flashTool = (x = innerWidth / 2) => setToolFlash({ n: Date.now(), x });
+  // the flash carries the acting tool's name — state can move on before it reads
+  const [toolFlash, setToolFlash] = useState<{ n: number; x: number; label: string } | null>(null);
+  const flashTool = (label: string, x = innerWidth / 2) =>
+    setToolFlash({ n: Date.now(), x, label });
   useEffect(() => {
     if (!toolFlash) return;
-    const t = setTimeout(() => setToolFlash(null), 1300);
+    const t = setTimeout(() => setToolFlash(null), 380);
     return () => clearTimeout(t);
   }, [toolFlash]);
   const [guideStep, setGuideStep] = useState<GuideStep>(
@@ -100,6 +102,21 @@ export default function App() {
   const [hoverTag, setHoverTag] = useState<{ x: number; y: number; text: string } | null>(null);
   const [offline, setOffline] = useState(!navigator.onLine);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeOut, setNoticeOut] = useState(false);
+  const noticeTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // a transient notice leaves the way it came — a short fade, not a vanish
+  const flashNotice = (text: string, ms = 3600) => {
+    noticeTimers.current.forEach(clearTimeout);
+    noticeTimers.current = [
+      setTimeout(() => setNoticeOut(true), ms),
+      setTimeout(() => {
+        setNotice(null);
+        setNoticeOut(false);
+      }, ms + 180),
+    ];
+    setNoticeOut(false);
+    setNotice(text);
+  };
   const readyRef = useRef<Ready | null>(null);
   const placeRef = useRef<Place>(DEFAULT_PLACE);
   const burnsCache = useRef(new Map<string, Hotspot[]>());
@@ -197,8 +214,7 @@ export default function App() {
       else {
         // the old hillside stays — say so instead of going silent
         setSwitching(null);
-        setNotice("that hillside didn't answer — you're still on the last one");
-        setTimeout(() => setNotice(null), 4200);
+        flashNotice("that hillside didn't answer — you're still on the last one", 4200);
       }
     } finally {
       if (seq === loadSeq.current) setSwitching(null);
@@ -254,8 +270,9 @@ export default function App() {
       if (now - statAt > 1100) {
         statAt = now;
         const s = r.sim.stats();
-        const km2 = s.burnt * (FIELD_SIZE * r.stage.terrain.metersPerPx) ** 2 / 1e6;
-        setBurntKm2((prev) => (Math.abs(prev - km2) > 0.005 ? km2 : prev));
+        // a live front counts at half weight — the number and the scar agree
+        const km2 = (s.burnt + s.burning * 0.5) * (FIELD_SIZE * r.stage.terrain.metersPerPx) ** 2 / 1e6;
+        setBurntKm2(km2);
         crackleRef.current.setLevel(s.burning * 14);
         // rain wets the air — the humidity readout twitches up, then settles
         rainDamp.current = Math.max(0, rainDamp.current - 0.35);
@@ -293,31 +310,34 @@ export default function App() {
     return () => crackleRef.current.stop();
   }, [soundOn]);
 
-  // guide progression — a poll watches real gestures, so any order works
-  useEffect(() => {
-    if (!ready || guideStep === "done") return;
-    const t = setInterval(() => {
-      const r = readyRef.current;
-      if (!r) return;
-      const orbitDone = r.stage.orbitAccum > 0.5;
-      const struckDone = struckOnce.current;
-      if (guideStep === "orbit" && orbitDone) {
-        setGuideStep("strike");
-        setTool("match");
-      } else if (guideStep === "strike" && struckDone) {
-        setGuideStep("break");
-        setTool("break");
-      } else if (guideStep === "break" && brokeOnce.current) {
-        finishGuide();
-      }
-    }, 400);
-    return () => clearInterval(t);
-  }, [ready, guideStep]);
-
   const finishGuide = () => {
     setGuideStep("done");
     localStorage.setItem(GUIDE_KEY, "1");
   };
+
+  // the lesson moves when the hand finishes the gesture, not a poll later —
+  // strike and break advance inside their own handlers; only the orbit step
+  // keeps a watcher, because a tilt has no single end event
+  const advanceGuide = () => {
+    const g = guideStepRef.current;
+    const r = readyRef.current;
+    if (g === "orbit" && r && r.stage.orbitAccum > 0.5) {
+      setGuideStep("strike");
+      setTool("match");
+    } else if (g === "strike" && struckOnce.current) {
+      setGuideStep("break");
+      setTool("break");
+    } else if (g === "break" && brokeOnce.current) {
+      finishGuide();
+    }
+  };
+
+  useEffect(() => {
+    if (!ready || guideStep !== "orbit") return;
+    const t = setInterval(advanceGuide, 300);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, guideStep]);
 
   // the lesson fades out instead of vanishing — keep it mounted through the fade
   const [guideGone, setGuideGone] = useState(guideStep === "done");
@@ -330,17 +350,17 @@ export default function App() {
     return () => clearTimeout(t);
   }, [guideStep]);
 
-  // the tour owns one effective tool — ring, cursor, behavior and flash agree.
-  // picking another tool mid-lesson re-points at the lesson's tool instead.
+  // while a lesson teaches, the dock only arms the tool being taught —
+  // anything else is disabled, not secretly rebound
+  const lessonToolOf = (g: GuideStep): Tool | null =>
+    g === "orbit" ? "orbit" : g === "strike" ? "match" : g === "break" ? "break" : null;
+
   const pickTool = (t: Tool) => {
-    const g = guideStepRef.current;
-    const lesson: Tool | null =
-      g === "orbit" ? "orbit" : g === "strike" ? "match" : g === "break" ? "break" : null;
-    const eff = lesson ?? t;
-    setTool(eff);
+    if (lessonToolOf(guideStepRef.current) && t !== lessonToolOf(guideStepRef.current)) return;
+    setTool(t);
     nudge();
-    const b = document.querySelector(`.tbtn[data-tool="${eff}"]`)?.getBoundingClientRect();
-    flashTool(b ? b.left + b.width / 2 : innerWidth / 2);
+    const b = document.querySelector(`.tbtn[data-tool="${t}"]`)?.getBoundingClientRect();
+    flashTool(TOOL_LABEL[t], b ? b.left + b.width / 2 : innerWidth / 2);
   };
 
   // replay must re-teach — stale gesture flags would auto-advance the poll
@@ -448,6 +468,7 @@ export default function App() {
       e.stopImmediatePropagation();
     };
     const upEvt = (e: PointerEvent) => {
+      advanceGuide(); // a drag that just ended may have carried the tilt home
       // touch has no hover — a tap on the relief whispers instead
       if (!active && pressPt && e.pointerType === "touch" && toolRef.current === "orbit") {
         const moved = Math.hypot(e.clientX - pressPt.x, e.clientY - pressPt.y);
@@ -484,24 +505,28 @@ export default function App() {
         crackleRef.current.strike();
         nudge();
         struckOnce.current = true;
+        advanceGuide();
         // honest feedback when the strike found nothing to hold
         setTimeout(() => {
           if (readyRef.current?.sim === sim && sim.stats().burning < 0.0004) {
-            setNotice("bare rock — the sparks die out");
-            setTimeout(() => setNotice(null), 3200);
+            flashNotice("bare rock — the sparks die out", 3200);
           }
         }, 1800);
       }
       if (toolRef.current === "break" && stroke.length) {
         sim.stamp(1, stroke, 10);
         brokeOnce.current = true;
+        advanceGuide();
       }
       stroke = [];
       e.stopImmediatePropagation();
     };
-    // an interrupted touch abandons the paint — it does not ignite the land
+    // an interrupted touch abandons the paint — it does not ignite the land.
+    // an orbit cancel falls through so Stage can release its own drag;
+    // swallowing it would leave `dragging` stuck and the land still turning
     const cancelEvt = (e: PointerEvent) => {
       pressPt = null;
+      if (!active) return;
       active = false;
       stroke = [];
       e.stopImmediatePropagation();
@@ -560,9 +585,10 @@ export default function App() {
             r.sim.stamp(2, [c], 70);
             nudge();
           }
-          setTool("orbit");
-          const ob = document.querySelector('.tbtn[data-tool="orbit"]')?.getBoundingClientRect();
-          flashTool(ob ? ob.left + ob.width / 2 : innerWidth / 2);
+          // the tool stays armed — the flash names what the hand just did
+          const ob = document.querySelector(`.tbtn[data-tool="${t}"]`)?.getBoundingClientRect();
+          flashTool(TOOL_LABEL[t], ob ? ob.left + ob.width / 2 : innerWidth / 2);
+          advanceGuide();
           return;
         }
       }
@@ -587,14 +613,18 @@ export default function App() {
     if (next) {
       // the satellites answer out loud — the one fact no demo can fake
       const call = (n: number, partial = false) => {
-        setNotice(
+        // an empty pass and a failed pass are different facts — even a pass
+        // that found fires says so when part of the sky never answered
+        flashNotice(
           n > 0
-            ? `${n} real fire${n === 1 ? "" : "s"} detected near here — the last 4 days`
+            ? partial
+              ? `${n} real fire${n === 1 ? "" : "s"} detected near here — some satellite passes are still missing`
+              : `${n} real fire${n === 1 ? "" : "s"} detected near here — the last 4 days`
             : partial
               ? "a quiet sky near here — some satellite passes are still missing"
               : "the satellites saw nothing burning near here — the last 4 days",
+          5200,
         );
-        setTimeout(() => setNotice(null), 5200);
       };
       if (hotspots) call(hotspots.length);
       else {
@@ -605,8 +635,7 @@ export default function App() {
           .then((h) => {
             if (!h.live) {
               // every request failed — that's an outage, not an empty sky
-              setNotice("the satellites aren't answering — try again later");
-              setTimeout(() => setNotice(null), 5200);
+              flashNotice("the satellites aren't answering — try again later", 5200);
               return;
             }
             burnsCache.current.set(pk, h.points);
@@ -615,8 +644,7 @@ export default function App() {
             call(h.points.length, h.partial);
           })
           .catch(() => {
-            setNotice("the satellites aren't answering — try again later");
-            setTimeout(() => setNotice(null), 5200);
+            flashNotice("the satellites aren't answering — try again later", 5200);
           });
       }
     }
@@ -630,6 +658,8 @@ export default function App() {
     if (next) c.start();
     else c.stop();
   };
+
+  const lesson = lessonToolOf(guideStep);
 
   if (err) {
     return (
@@ -777,6 +807,7 @@ export default function App() {
                 data-tool={t}
                 className={`tbtn ${tool === t ? "on" : ""}`}
                 onClick={() => pickTool(t)}
+                disabled={lesson !== null && t !== lesson}
                 aria-pressed={tool === t}
                 title={`${TOOL_LABEL[t]} (${t === "orbit" ? "1" : t === "match" ? "2" : t === "break" ? "3" : "4"})`}
               >
@@ -787,7 +818,7 @@ export default function App() {
           {/* the tool's name answers the switch from the button that asked, then drops */}
           {toolFlash && (
             <div key={toolFlash.n} className="toolflash" style={{ left: toolFlash.x }} aria-hidden>
-              <TextMorph>{TOOL_LABEL[tool]}</TextMorph>
+              <TextMorph>{toolFlash.label}</TextMorph>
             </div>
           )}
 
@@ -800,7 +831,7 @@ export default function App() {
           {offline && (
             <div className="offline">no connection — the wind is a memory</div>
           )}
-          {notice && <div className="offline">{notice}</div>}
+          {notice && <div className={`offline${noticeOut ? " out" : ""}`}>{notice}</div>}
 
           {switching && (
             <div className="switching">
