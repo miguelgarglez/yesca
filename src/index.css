@@ -367,7 +367,11 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
    gives the sentence its own line and the controls the next */
 .g-top, .g-meta { display: contents; }
 /* TextMorph can't wrap — the phone swaps it for a plain twin of the lesson */
-.g-plain { display: none; }
+/* desktop: the morph paints, the plain copy reads — hidden visually, not to AT */
+.g-plain {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 /* the pointer copy can't teach keys — this line exists only for tab users */
 .g-keys {
   display: none;
@@ -407,11 +411,18 @@ body.kb .g-keys { display: inline; }
 }
 .g-skip:hover { opacity: 0.9; }
 .g-skip:focus-visible { outline: 1px solid var(--amber); outline-offset: 3px; }
-/* the lesson leaves the way it came — a fade, not a vanish */
+/* the lesson leaves the way it came — a fade, not a vanish. the exit is a
+   keyframe, not a transition: a `to`-only animation interpolates from the live
+   computed value, so a skip mid-entrance fades from wherever hud-in-c had
+   reached. a removed animation would not seed a transition — it jumps.
+   the prefixed selector outranks body.revealed .guide's entrance rule */
+body.revealed .guide.out,
 .guide.out {
-  opacity: 0; transform: translateX(-50%) translateY(8px);
-  transition: opacity 420ms var(--ease-out), transform 420ms var(--ease-out);
+  animation: guide-out 420ms var(--ease-out) both;
   pointer-events: none;
+}
+@keyframes guide-out {
+  to { opacity: 0; transform: translateX(-50%) translateY(8px); }
 }
 .guide { transition: opacity 300ms var(--ease-out), transform 300ms var(--ease-out); }
 
@@ -429,7 +440,11 @@ body.kb .g-keys { display: inline; }
   animation: chip-in 260ms var(--ease-out) backwards;
   transition: opacity 160ms var(--ease-out); /* whispers fade, they don't blink */
 }
-.hoverchip.out { opacity: 0; }
+/* same to-only pattern — fades from wherever the entrance had reached */
+.hoverchip.out { animation: chip-out 160ms var(--ease-out) both; }
+@keyframes chip-out {
+  to { opacity: 0; }
+}
 @keyframes chip-in {
   from { opacity: 0; transform: translateY(calc(-100% + 4px)); }
   to { opacity: 1; transform: translateY(-100%); }
@@ -452,8 +467,12 @@ body.kb .g-keys { display: inline; }
   animation: guide-in 400ms var(--ease-spring) backwards;
   transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
 }
-/* a status that arrives with motion leaves with motion too */
-.offline.out { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+/* a status that arrives with motion leaves with motion too — to-only so a
+   dismiss mid-entrance starts from the live value */
+.offline.out { animation: notice-out 180ms var(--ease-out) both; }
+@keyframes notice-out {
+  to { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+}
 
 /* ---------- place tray ---------- */
 
@@ -477,8 +496,11 @@ body.kb .g-keys { display: inline; }
 }
 .placetray { transition: opacity 240ms var(--ease-out), transform 240ms var(--ease-out); }
 .placetray.out {
-  opacity: 0; transform: scale(0.97) translateY(-4px);
+  animation: tray-out 240ms var(--ease-out) both;
   pointer-events: none;
+}
+@keyframes tray-out {
+  to { opacity: 0; transform: scale(0.97) translateY(-4px); }
 }
 .pt-head { padding: 10px 12px 8px; border-bottom: 1px solid rgba(233,225,206,0.08); }
 .pt-head input {
@@ -554,7 +576,10 @@ body.kb .g-keys { display: inline; }
   transition: opacity 240ms var(--ease-out);
 }
 @keyframes fade-in { from { opacity: 0; } }
-.sheet-back.out { opacity: 0; pointer-events: none; }
+.sheet-back.out { animation: back-out 240ms var(--ease-out) both; pointer-events: none; }
+@keyframes back-out {
+  to { opacity: 0; }
+}
 .sheet {
   background: none;
   border: none;
@@ -571,10 +596,13 @@ body.kb .g-keys { display: inline; }
   from { opacity: 0; transform: translateY(14px) scale(0.96) rotate(-0.6deg); }
   to { opacity: 1; transform: none; }
 }
-/* the close retraces the open — the card folds back toward the chip's corner */
+/* the close retraces the open — the card folds back toward the chip's corner.
+   to-only so a close during sheet-in folds from wherever the card had got to */
 .sheet-back.out .sheet {
-  opacity: 0;
-  transform: scale(0.94) translateY(10px) rotate(-0.6deg);
+  animation: sheet-out 220ms var(--ease-out) both;
+}
+@keyframes sheet-out {
+  to { opacity: 0; transform: scale(0.94) translateY(10px) rotate(-0.6deg); }
 }
 .sheet canvas {
   width: 100%; height: auto; display: block;
@@ -647,7 +675,7 @@ body.kb .g-keys { display: inline; }
   .sheet-actions button, .sheet-actions a { min-height: 44px; display: inline-flex; align-items: center; }
   /* rail tops out at 148+44=192 — the chip clears it with room to spare */
   .sharechip { left: 16px; bottom: 204px; min-height: 44px; display: inline-flex; align-items: center; }
-  .tray { bottom: 14px; padding: 6px 10px 6px 12px; }
+  .tray { bottom: calc(14px + env(safe-area-inset-bottom)); padding: 6px 10px 6px 12px; }
   .dock-brand span { display: none; }
   .tbtn { width: 44px; height: 44px; }
   /* the phone lesson is two rows: the sentence alone, then the controls —
@@ -658,7 +686,7 @@ body.kb .g-keys { display: inline; }
   .g-meta { display: flex; align-items: center; gap: 14px; }
   .g-meta .g-dots { margin-left: auto; }
   .g-morph { display: none; }
-  .g-plain { display: inline; }
+  .g-plain { display: inline; position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; }
   .placetray { top: 56px; right: 16px; left: 16px; width: auto; }
 }
 
@@ -678,6 +706,6 @@ body.kb .g-keys { display: inline; }
   .toolflash, .loading .bar i { animation: none; }
   /* decorative exits don't slide under reduce — they settle instantly */
   .guide.out, .placetray.out, .sheet-back.out,
-  .sheet-back.out .sheet, .offline.out, .hoverchip.out { transition-duration: 0.001ms; }
+  .sheet-back.out .sheet, .offline.out, .hoverchip.out { animation-duration: 0.001ms; }
   .vane .needle { transition-duration: 200ms; }
 }

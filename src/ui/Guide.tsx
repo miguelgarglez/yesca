@@ -43,7 +43,9 @@ export function Guide({ step, closing, onSkip, buzzOn, onBuzz }: Props) {
       <div className="g-top">
         <span className="g-k">{c.k}</span>
         <span className="g-line">
-          <span className="g-morph">
+          {/* morph duplicates words internally — the plain twin is the one
+              screen readers get (visually hidden on desktop, shown on mobile) */}
+          <span className="g-morph" aria-hidden="true">
             <TextMorph>{c.line}</TextMorph>
           </span>
           <span className="g-plain">{c.line}</span>

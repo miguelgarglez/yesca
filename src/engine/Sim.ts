@@ -269,13 +269,13 @@ export class Sim {
 
   /** queue a brush stroke; mode 0=ignite 1=firebreak 2=rain 3=scratch */
   stamp(mode: 0 | 1 | 2 | 3, points: { u: number; v: number }[], radiusPx: number, strength = 1) {
-    // resample long strokes evenly so a 64-stamp cap covers the whole path
-    const step = Math.max(1, Math.ceil(points.length / 64));
-    const pts = points
-      .filter((_, i) => i % step === 0)
-      .slice(0, 64)
-      .map((p) => new THREE.Vector4(p.u, p.v, radiusPx / N, strength));
-    if (pts.length) this.stampQueue.push({ mode, pts });
+    // a stroke longer than one batch is split, not strided — every point lands
+    for (let i = 0; i < points.length; i += 64) {
+      const pts = points
+        .slice(i, i + 64)
+        .map((p) => new THREE.Vector4(p.u, p.v, radiusPx / N, strength));
+      if (pts.length) this.stampQueue.push({ mode, pts });
+    }
   }
 
   private applyStamps() {

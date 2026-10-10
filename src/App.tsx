@@ -114,6 +114,11 @@ export default function App() {
       if (id === whisperSeq.current) setHoverTag(null);
     }, ms + 180);
   };
+  // hover whispers fade too — moving off a scar is not a teleport either
+  const fadeWhisper = () => {
+    setHoverTag((h) => (h ? { ...h, out: true } : h));
+    setTimeout(() => setHoverTag((h) => (h?.out ? null : h)), 200);
+  };
   const [offline, setOffline] = useState(!navigator.onLine);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeOut, setNoticeOut] = useState(false);
@@ -363,7 +368,8 @@ export default function App() {
       setGuideGone(false);
       return;
     }
-    const t = setTimeout(() => setGuideGone(true), 500);
+    // the exit transition is 420ms — hold the node just past it, not 1.25s
+    const t = setTimeout(() => setGuideGone(true), 460);
     return () => clearTimeout(t);
   }, [guideStep]);
 
@@ -410,6 +416,7 @@ export default function App() {
     let hoverAt = 0;
 
     let pressPt: { x: number; y: number; id: number } | null = null;
+    let lastEv: { x: number; y: number } | null = null;
     const down = (e: PointerEvent) => {
       const p = stage.pick(e.clientX, e.clientY);
       gatePick = p; // fresh every press, before any branch consumes it
@@ -422,6 +429,7 @@ export default function App() {
       if (!p) return; // off-terrain presses fall through to orbit
       e.stopImmediatePropagation();
       paintId = e.pointerId;
+      lastEv = { x: e.clientX, y: e.clientY };
       stroke = [{ u: p.u, v: p.v }];
       if (t === "match") {
         sim.stamp(3, stroke, 5);
@@ -447,42 +455,51 @@ export default function App() {
             const c = sim.cell(p.u, p.v);
             if (c[0]! >= 1.5 && c[2]! > 0) {
               const ago = Math.max(1, Math.round((sim.time - c[2]!) / 60));
+              whisperSeq.current++; // a fresh whisper invalidates old timers
               setHoverTag({
                 x: e.clientX,
                 y: e.clientY,
                 text: `burned ${ago} min ago`,
               });
-            } else setHoverTag(null);
-          } else setHoverTag(null);
+            } else fadeWhisper();
+          } else fadeWhisper();
         }
         return;
       }
       if (e.pointerId !== paintId) return;
-      const p = stage.pick(e.clientX, e.clientY);
-      if (!p) return;
-      const last = stroke[stroke.length - 1];
-      if (last && Math.hypot(p.u - last.u, p.v - last.v) > 6 / 768) {
-        // densify so a fast hand leaves a continuous mark, not dots — the
-        // match scores and the firebreak cuts share the same interpolation
-        const d = Math.hypot(p.u - last.u, p.v - last.v);
-        const steps = Math.max(1, Math.ceil(d / (2 / 768)));
-        const dense: { u: number; v: number }[] = [];
-        for (let k = 1; k <= steps; k++) {
-          dense.push({ u: last.u + (p.u - last.u) * (k / steps), v: last.v + (p.v - last.v) * (k / steps) });
+      const from = lastEv ?? { x: e.clientX, y: e.clientY };
+      lastEv = { x: e.clientX, y: e.clientY };
+      // walk the finger's real path in screen space, ~8px at a time — a chord
+      // between two sparse picks cuts across a ridge it never touched
+      const seg = Math.hypot(e.clientX - from.x, e.clientY - from.y);
+      const steps = Math.min(80, Math.max(1, Math.ceil(seg / 8)));
+      const fresh: { u: number; v: number }[] = [];
+      for (let k = 1; k <= steps; k++) {
+        const sp = stage.pick(
+          from.x + ((e.clientX - from.x) * k) / steps,
+          from.y + ((e.clientY - from.y) * k) / steps,
+        );
+        if (!sp) continue; // off the slab — the mark stops where the land does
+        const last = stroke[stroke.length - 1];
+        if (!last || Math.hypot(sp.u - last.u, sp.v - last.v) > 2 / 768) {
+          const pt = { u: sp.u, v: sp.v };
+          stroke.push(pt);
+          fresh.push(pt);
         }
-        stroke.push({ u: p.u, v: p.v });
-        if (t === "match") {
-          sim.stamp(3, dense, 5);
-          fx.sputter(p.u, p.v);
-        } else if (t === "break") {
-          sim.stamp(1, dense, 10);
-        }
+      }
+      if (!fresh.length) return;
+      const head = fresh[fresh.length - 1]!;
+      if (t === "match") {
+        sim.stamp(3, fresh, 5);
+        fx.sputter(head.u, head.v);
+      } else if (t === "break") {
+        sim.stamp(1, fresh, 10);
       }
       if (t === "rain") {
         const now = performance.now();
         if (now - lastRain > 90) {
-          sim.stamp(2, [stroke[stroke.length - 1]!], 34, 0.9);
-          fx.rain(p.u, p.v);
+          sim.stamp(2, fresh, 34, 0.9);
+          fx.rain(head.u, head.v);
           rainDamp.current = Math.min(6, rainDamp.current + 0.8);
           lastRain = now;
         }
@@ -518,6 +535,7 @@ export default function App() {
       if (pressPt?.id === e.pointerId) pressPt = null;
       if (paintId === -1 || e.pointerId !== paintId) return;
       paintId = -1;
+      lastEv = null;
       if (toolRef.current === "match" && stroke.length) {
         // a dragged match drops a line of fire along the last stretch,
         // then flares where the stroke ends
@@ -540,12 +558,17 @@ export default function App() {
         }, 1800);
       }
       if (toolRef.current === "break" && stroke.length) {
+        // the finishing cut replays the walked path, not the sparse endpoints
         sim.stamp(1, stroke, 10);
         brokeOnce.current = true;
         nudge();
         advanceGuide();
       }
-      if (toolRef.current === "rain" && stroke.length) nudge();
+      if (toolRef.current === "rain" && stroke.length) {
+        // the whole wet path lands, even under the 90ms throttle
+        sim.stamp(2, stroke, 30, 0.9);
+        nudge();
+      }
       stroke = [];
       e.stopImmediatePropagation();
     };
@@ -556,6 +579,7 @@ export default function App() {
       if (pressPt?.id === e.pointerId) pressPt = null;
       if (paintId === -1 || e.pointerId !== paintId) return;
       paintId = -1;
+      lastEv = null;
       stroke = [];
       e.stopImmediatePropagation();
     };
@@ -564,10 +588,7 @@ export default function App() {
     canvas.addEventListener("pointerup", upEvt, true);
     canvas.addEventListener("pointercancel", cancelEvt, true);
     // the whisper fades out under the leaving hand rather than cutting away
-    const leave = () => {
-      setHoverTag((h) => (h ? { ...h, out: true } : h));
-      setTimeout(() => setHoverTag((h) => (h?.out ? null : h)), 200);
-    };
+    const leave = () => fadeWhisper();
     canvas.addEventListener("pointerleave", leave);
     return () => {
       canvas.removeEventListener("pointerdown", down, true);
@@ -794,7 +815,15 @@ export default function App() {
               title="real detections from NASA's satellites, last few days"
             >
               <span className="lbl">
-                real burns{hotspots?.length ? ` · ${hotspots.length}` : ""}
+                real burns
+                {hotspots?.length ? (
+                  <>
+                    {" "}
+                    · <NumberFlow value={hotspots.length} format={{ maximumFractionDigits: 0 }} />
+                  </>
+                ) : (
+                  ""
+                )}
               </span>
               <i className="sw" />
             </button>
@@ -818,7 +847,9 @@ export default function App() {
             </button>
           </div>
 
-          {burntKm2 > 0.004 && !shareOpen && guideStep === "done" && (
+          {/* the chip never leaves — the sheet-back scrim covers it while open,
+              and the close just reveals it instead of replaying chip-in */}
+          {burntKm2 > 0.004 && guideStep === "done" && (
             <button
               className="sharechip"
               onClick={(e) => {
