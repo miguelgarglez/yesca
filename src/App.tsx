@@ -16,6 +16,7 @@ import { FALLBACK_WEATHER, fetchWeather } from "./lib/weather";
 import { nameFor } from "./lib/gazetteer";
 import { fetchHotspots, type Hotspot } from "./lib/firms";
 import { Crackle } from "./lib/crackle";
+import { cancelExit, playExit } from "./lib/exit";
 import { prefersReducedMotion } from "./lib/reduced";
 import { Sim } from "./engine/Sim";
 import { Stage } from "./engine/Stage";
@@ -102,13 +103,22 @@ export default function App() {
   const [burntKm2, setBurntKm2] = useState(0);
   const [hoverTag, setHoverTag] = useState<{ x: number; y: number; text: string; out?: boolean } | null>(null);
   const whisperSeq = useRef(0);
-  // a whisper leaves the way it arrived — a short fade, and a second tap
-  // replaces it cleanly instead of racing its timers
+  const chipRef = useRef<HTMLDivElement>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
+  // pointer handlers read the live tag through here — the listener effect
+  // re-subscribes rarely, so state captured there would go stale
+  const hoverRef = useRef<typeof hoverTag>(null);
+  hoverRef.current = hoverTag;
+  // a whisper leaves the way it arrived — a short fade that starts from
+  // wherever the entrance reached, and a second tap replaces it cleanly
   const whisperTag = (x: number, y: number, text: string, ms: number) => {
     const id = ++whisperSeq.current;
+    cancelExit(chipRef.current);
     setHoverTag({ x, y, text });
     setTimeout(() => {
-      if (id === whisperSeq.current) setHoverTag((h) => (h ? { ...h, out: true } : h));
+      if (id !== whisperSeq.current) return;
+      playExit(chipRef.current, 160);
+      setHoverTag((h) => (h ? { ...h, out: true } : h));
     }, ms);
     setTimeout(() => {
       if (id === whisperSeq.current) setHoverTag(null);
@@ -116,6 +126,7 @@ export default function App() {
   };
   // hover whispers fade too — moving off a scar is not a teleport either
   const fadeWhisper = () => {
+    playExit(chipRef.current, 160);
     setHoverTag((h) => (h ? { ...h, out: true } : h));
     setTimeout(() => setHoverTag((h) => (h?.out ? null : h)), 200);
   };
@@ -127,12 +138,16 @@ export default function App() {
   const flashNotice = (text: string, ms = 3600) => {
     noticeTimers.current.forEach(clearTimeout);
     noticeTimers.current = [
-      setTimeout(() => setNoticeOut(true), ms),
+      setTimeout(() => {
+        playExit(noticeRef.current, 180, "translateX(-50%) translateY(-4px)");
+        setNoticeOut(true);
+      }, ms),
       setTimeout(() => {
         setNotice(null);
         setNoticeOut(false);
       }, ms + 180),
     ];
+    cancelExit(noticeRef.current);
     setNoticeOut(false);
     setNotice(text);
   };
@@ -333,6 +348,9 @@ export default function App() {
   }, [soundOn]);
 
   const finishGuide = () => {
+    // the exit hands off from wherever the entrance reached — play the clip
+    // before the .out commit or it would start from the resting style
+    playExit(document.querySelector(".guide"), 420, "translateX(-50%) translateY(8px)");
     setGuideStep("done");
     localStorage.setItem(GUIDE_KEY, "1");
   };
@@ -414,6 +432,9 @@ export default function App() {
     let paintId = -1; // one brush at a time — a second finger can't hijack a stroke
     let lastRain = 0;
     let hoverAt = 0;
+    // the handler reads the live tag through a ref — the effect re-subscribes
+    // rarely, so a captured hoverTag would go stale between throttles
+    const hoverLive = () => hoverRef.current;
 
     let pressPt: { x: number; y: number; id: number } | null = null;
     let lastEv: { x: number; y: number } | null = null;
@@ -448,21 +469,32 @@ export default function App() {
       if (paintId === -1) {
         // whisper: how long ago did this cell burn?
         const now = performance.now();
-        if (e.pointerType === "mouse" && now - hoverAt > 160) {
-          hoverAt = now;
-          const p = stage.pick(e.clientX, e.clientY);
-          if (p) {
-            const c = sim.cell(p.u, p.v);
-            if (c[0]! >= 1.5 && c[2]! > 0) {
-              const ago = Math.max(1, Math.round((sim.time - c[2]!) / 60));
-              whisperSeq.current++; // a fresh whisper invalidates old timers
-              setHoverTag({
-                x: e.clientX,
-                y: e.clientY,
-                text: `burned ${ago} min ago`,
-              });
-            } else fadeWhisper();
-          } else fadeWhisper();
+        if (e.pointerType === "mouse") {
+          const h = hoverLive();
+          if (h && !h.out) {
+            // a live whisper raycasts every move — leaving its scar fades
+            // now, not whenever the 160ms show-budget next opens
+            const p = stage.pick(e.clientX, e.clientY);
+            const c = p ? sim.cell(p.u, p.v) : null;
+            const onScar = !!c && (c[0]! >= 1.5 ? c[2]! > 0 : c[0]! > 0.5);
+            if (!onScar) fadeWhisper();
+          } else if (now - hoverAt > 160) {
+            hoverAt = now;
+            const p = stage.pick(e.clientX, e.clientY);
+            if (p) {
+              const c = sim.cell(p.u, p.v);
+              const scarred = c[0]! >= 1.5 && c[2]! > 0;
+              if (scarred || c[0]! > 0.5) {
+                // same words a tap gets — a live front deserves a whisper too
+                const text = scarred
+                  ? `burned ${Math.max(1, Math.round((sim.time - c[2]!) / 60))} min ago`
+                  : "burning";
+                whisperSeq.current++; // a fresh whisper invalidates old timers
+                cancelExit(chipRef.current);
+                setHoverTag({ x: e.clientX, y: e.clientY, text });
+              } else if (h) fadeWhisper();
+            }
+          }
         }
         return;
       }
@@ -891,6 +923,7 @@ export default function App() {
 
           {hoverTag && (
             <div
+              ref={chipRef}
               className={`hoverchip${hoverTag.out ? " out" : ""}`}
               style={{ left: Math.min(hoverTag.x + 14, innerWidth - 170), top: hoverTag.y - 10 }}
             >
@@ -904,7 +937,7 @@ export default function App() {
             </div>
           )}
           {notice && (
-            <div className={`offline${noticeOut ? " out" : ""}`} role="status" aria-live="polite">
+            <div ref={noticeRef} className={`offline${noticeOut ? " out" : ""}`} role="status" aria-live="polite">
               {notice}
             </div>
           )}
@@ -930,13 +963,19 @@ export default function App() {
 
           <PlaceTray
             open={placesOpen}
-            onClose={() => setPlacesOpen(false)}
+            onClose={() => {
+              // the tray folds from wherever its entrance reached
+              playExit(document.querySelector(".placetray"), 240, "scale(0.97) translateY(-4px)");
+              setPlacesOpen(false);
+            }}
             place={place}
             onGuide={() => {
+              playExit(document.querySelector(".placetray"), 240, "scale(0.97) translateY(-4px)");
               setPlacesOpen(false);
               restartGuide();
             }}
             onPick={(p) => {
+              playExit(document.querySelector(".placetray"), 240, "scale(0.97) translateY(-4px)");
               setPlacesOpen(false);
               nudge();
               loadPlace(p, false);
@@ -945,7 +984,12 @@ export default function App() {
 
           <ShareSheet
             open={shareOpen}
-            onClose={() => setShareOpen(false)}
+            onClose={() => {
+              // scrim and card fold together, starting from the live style
+              playExit(document.querySelector(".sheet-back"), 240);
+              playExit(document.querySelector(".sheet"), 220, "scale(0.94) translateY(10px) rotate(-0.6deg)");
+              setShareOpen(false);
+            }}
             anchor={shareAnchor}
             place={place}
             weather={weather}

@@ -411,20 +411,17 @@ body.kb .g-keys { display: inline; }
 }
 .g-skip:hover { opacity: 0.9; }
 .g-skip:focus-visible { outline: 1px solid var(--amber); outline-offset: 3px; }
-/* the lesson leaves the way it came — a fade, not a vanish. the exit is a
-   keyframe, not a transition: a `to`-only animation interpolates from the live
-   computed value, so a skip mid-entrance fades from wherever hud-in-c had
-   reached. a removed animation would not seed a transition — it jumps.
-   the prefixed selector outranks body.revealed .guide's entrance rule */
+/* the lesson leaves the way it came — a fade, not a vanish. the visual path
+   is a WAAPI clip (lib/exit.ts) started in the trigger, so it hands off from
+   wherever the entrance reached; this rule only owns the end state and kills
+   the entrance animation. no transition here — a running transition would
+   sit above the clip in the cascade and mask the handoff */
 body.revealed .guide.out,
 .guide.out {
-  animation: guide-out 420ms var(--ease-out) both;
+  animation: none;
+  opacity: 0; transform: translateX(-50%) translateY(8px);
   pointer-events: none;
 }
-@keyframes guide-out {
-  to { opacity: 0; transform: translateX(-50%) translateY(8px); }
-}
-.guide { transition: opacity 300ms var(--ease-out), transform 300ms var(--ease-out); }
 
 /* ---------- hover whisper ---------- */
 
@@ -438,13 +435,10 @@ body.revealed .guide.out,
   backdrop-filter: blur(8px);
   transform: translateY(-100%);
   animation: chip-in 260ms var(--ease-out) backwards;
-  transition: opacity 160ms var(--ease-out); /* whispers fade, they don't blink */
 }
-/* same to-only pattern — fades from wherever the entrance had reached */
-.hoverchip.out { animation: chip-out 160ms var(--ease-out) both; }
-@keyframes chip-out {
-  to { opacity: 0; }
-}
+/* whispers fade, they don't blink — the WAAPI clip owns the fade; .out pins
+   the end state so a missed clip still lands hidden, never mid-air */
+.hoverchip.out { animation: none; opacity: 0; }
 @keyframes chip-in {
   from { opacity: 0; transform: translateY(calc(-100% + 4px)); }
   to { opacity: 1; transform: translateY(-100%); }
@@ -465,14 +459,10 @@ body.revealed .guide.out,
   /* fill-mode: both would pin the entrance keyframe over .out — backwards lets
      the base styles own the element once the entrance has played */
   animation: guide-in 400ms var(--ease-spring) backwards;
-  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
 }
-/* a status that arrives with motion leaves with motion too — to-only so a
-   dismiss mid-entrance starts from the live value */
-.offline.out { animation: notice-out 180ms var(--ease-out) both; }
-@keyframes notice-out {
-  to { opacity: 0; transform: translateX(-50%) translateY(-4px); }
-}
+/* a status that arrives with motion leaves with motion too — clip-driven,
+   .out pins the end state */
+.offline.out { animation: none; opacity: 0; transform: translateX(-50%) translateY(-4px); }
 
 /* ---------- place tray ---------- */
 
@@ -494,13 +484,10 @@ body.revealed .guide.out,
   from { opacity: 0; transform: scale(0.96) translateY(-6px); }
   to { opacity: 1; transform: none; }
 }
-.placetray { transition: opacity 240ms var(--ease-out), transform 240ms var(--ease-out); }
 .placetray.out {
-  animation: tray-out 240ms var(--ease-out) both;
+  animation: none;
+  opacity: 0; transform: scale(0.97) translateY(-4px);
   pointer-events: none;
-}
-@keyframes tray-out {
-  to { opacity: 0; transform: scale(0.97) translateY(-4px); }
 }
 .pt-head { padding: 10px 12px 8px; border-bottom: 1px solid rgba(233,225,206,0.08); }
 .pt-head input {
@@ -573,13 +560,9 @@ body.revealed .guide.out,
   background: rgba(13,12,10,0.6); backdrop-filter: blur(6px);
   display: grid; place-items: center;
   animation: fade-in 240ms var(--ease-out) backwards; /* base styles own the end state */
-  transition: opacity 240ms var(--ease-out);
 }
 @keyframes fade-in { from { opacity: 0; } }
-.sheet-back.out { animation: back-out 240ms var(--ease-out) both; pointer-events: none; }
-@keyframes back-out {
-  to { opacity: 0; }
-}
+.sheet-back.out { animation: none; opacity: 0; pointer-events: none; }
 .sheet {
   background: none;
   border: none;
@@ -590,19 +573,18 @@ body.revealed .guide.out,
   overflow-y: auto; /* the card can never walk off a short screen */
   transform-origin: bottom left; /* grows out of the chip that summoned it */
   animation: sheet-in 380ms var(--ease-spring) backwards;
-  transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out);
 }
 @keyframes sheet-in {
   from { opacity: 0; transform: translateY(14px) scale(0.96) rotate(-0.6deg); }
   to { opacity: 1; transform: none; }
 }
-/* the close retraces the open — the card folds back toward the chip's corner.
-   to-only so a close during sheet-in folds from wherever the card had got to */
+/* the close retraces the open — the card folds back toward the chip's corner,
+   clip-driven from the live style (a close during sheet-in folds from
+   wherever the card had got to) */
 .sheet-back.out .sheet {
-  animation: sheet-out 220ms var(--ease-out) both;
-}
-@keyframes sheet-out {
-  to { opacity: 0; transform: scale(0.94) translateY(10px) rotate(-0.6deg); }
+  animation: none;
+  opacity: 0;
+  transform: scale(0.94) translateY(10px) rotate(-0.6deg);
 }
 .sheet canvas {
   width: 100%; height: auto; display: block;
@@ -655,7 +637,7 @@ body.revealed .guide.out,
   .masthead { padding: 14px 16px; }
   .place-btn { font-size: 11px; }
   .instruments {
-    left: 16px; bottom: 96px; gap: 12px;
+    left: 16px; bottom: calc(96px + env(safe-area-inset-bottom)); gap: 12px;
   }
   .inst .v { font-size: 14px; }
   /* air stays hidden; burnt returns once there is a scar to count */
@@ -663,7 +645,7 @@ body.revealed .guide.out,
   .vane { width: 36px; height: 36px; }
   .vane .needle { height: 14px; }
   .rail {
-    left: 16px; right: auto; bottom: 148px; top: auto; gap: 14px;
+    left: 16px; right: auto; bottom: calc(148px + env(safe-area-inset-bottom)); top: auto; gap: 14px;
   }
   .lever { min-height: 44px; }
   /* 44px targets for every secondary touch on the phone too */
@@ -674,13 +656,16 @@ body.revealed .guide.out,
   .place-btn { min-height: 44px; }
   .sheet-actions button, .sheet-actions a { min-height: 44px; display: inline-flex; align-items: center; }
   /* rail tops out at 148+44=192 — the chip clears it with room to spare */
-  .sharechip { left: 16px; bottom: 204px; min-height: 44px; display: inline-flex; align-items: center; }
+  .sharechip { left: 16px; bottom: calc(204px + env(safe-area-inset-bottom)); min-height: 44px; display: inline-flex; align-items: center; }
   .tray { bottom: calc(14px + env(safe-area-inset-bottom)); padding: 6px 10px 6px 12px; }
+  /* the whole stack lifts with the dock — a home-indicator inset used to
+     raise the tray alone and park it inside the readouts and the lesson */
+  .offline { bottom: calc(74px + env(safe-area-inset-bottom)); }
   .dock-brand span { display: none; }
   .tbtn { width: 44px; height: 44px; }
   /* the phone lesson is two rows: the sentence alone, then the controls —
      a 44px target beside the sentence is what used to cut it in half */
-  .guide { bottom: 100px; max-width: 88vw; flex-direction: column; align-items: stretch; gap: 6px; }
+  .guide { bottom: calc(100px + env(safe-area-inset-bottom)); max-width: 88vw; flex-direction: column; align-items: stretch; gap: 6px; }
   .guide .g-k { display: none; }
   .g-top { display: flex; align-items: baseline; gap: 10px; }
   .g-meta { display: flex; align-items: center; gap: 14px; }
@@ -704,8 +689,5 @@ body.revealed .guide.out,
   }
   /* a 1ms run races to the last frame — these should be still, not invisible */
   .toolflash, .loading .bar i { animation: none; }
-  /* decorative exits don't slide under reduce — they settle instantly */
-  .guide.out, .placetray.out, .sheet-back.out,
-  .sheet-back.out .sheet, .offline.out, .hoverchip.out { animation-duration: 0.001ms; }
   .vane .needle { transition-duration: 200ms; }
 }

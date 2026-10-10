@@ -115,37 +115,74 @@ if (scarHit) {
   );
 } else check("whisper fades when leaving a scar", false, "no burnt cell on screen");
 
-// 3. dismiss during the guide entrance owns opacity — replay the tour and skip fast
-await page.evaluate(() => document.querySelector(".pt-guide") ?? null);
+// 3. dismiss mid-entrance hands off from the LIVE value — catch the guide
+//    mid-fade-in, skip, and assert the first exit frame ≈ that live value
+//    (a pop back to opacity 1 is exactly the bug the r13 review measured)
 await page.keyboard.press("?");
-await page.waitForTimeout(150); // skip while hud-in-c is still arriving
 const skipped = await page.evaluate(async () => {
-  const skip = document.querySelector(".g-skip");
-  if (skip) skip.click();
-  // sample the guide's computed opacity over the next frames
-  const out = [];
-  for (let i = 0; i < 20; i++) {
-    await new Promise((r) => requestAnimationFrame(r));
-    const g = document.querySelector(".guide");
-    out.push(g ? { cls: g.className, o: +getComputedStyle(g).opacity, an: getComputedStyle(g).animationName } : null);
-    if (!g) break;
+  // wait for the entrance to be mid-run (starved main thread makes tight
+  // windows racy, so accept any running CSSAnimation on the guide), then —
+  // synchronously after the click — the WAAPI clip's FIRST KEYFRAME must be
+  // the live computed value. that is the reviewed property: no pop to 1.
+  const deadline = performance.now() + 8000;
+  let g = null;
+  while (performance.now() < deadline) {
+    g = document.querySelector(".guide");
+    if (g && g.getAnimations().some((a) => a instanceof CSSAnimation && a.playState === "running")) break;
+    g = null;
+    await new Promise((r) => setTimeout(r, 25));
   }
-  return out;
+  if (!g) {
+    document.querySelector(".g-skip")?.click(); // still finish the tour
+    return { fail: "entrance never observed" };
+  }
+  const before = +getComputedStyle(g).opacity;
+  document.querySelector(".g-skip").click();
+  const clip = g.getAnimations().find((a) => !(a instanceof CSSAnimation));
+  const kf0 = clip?.effect?.getKeyframes?.()[0];
+  const unmounted = await (async () => {
+    for (let i = 0; i < 60; i++) {
+      if (!document.querySelector(".guide")) return true;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    return false;
+  })();
+  return {
+    before,
+    from: kf0 ? +kf0.opacity : null,
+    clipAlive: !!clip && clip.playState !== "idle",
+    cls: g.className,
+    unmounted,
+  };
 });
-const sawOutFading = skipped.some((s) => s && s.cls.includes("out") && s.o < 0.95);
-const unmounted = skipped[skipped.length - 1] === null;
 check(
-  "skip during entrance: .out owns the fade",
-  sawOutFading && unmounted,
-  JSON.stringify(skipped.filter(Boolean).map((s) => ({ o: s.o, an: s.an })).slice(0, 6)),
+  "skip mid-entrance: exit clip starts at the live value, not 1",
+  skipped.before !== undefined &&
+    Math.abs((skipped.from ?? NaN) - skipped.before) < 0.001 &&
+    skipped.clipAlive === true &&
+    skipped.cls?.includes("out") &&
+    skipped.unmounted === true,
+  JSON.stringify(skipped),
 );
 
-// 4. share chip stays mounted while the sheet is open
-await page.waitForSelector(".sharechip", { timeout: 40000 });
-await page.click(".sharechip");
-await page.waitForSelector(".sheet");
-const chipDuring = await page.evaluate(() => !!document.querySelector(".sharechip"));
-check("share chip stays mounted under the open sheet", chipDuring);
+// 4. share chip stays mounted while the sheet is open — seed a burn via the
+//    API so this DOM check doesn't ride on fuel dice
+await page.evaluate(() => {
+  const y = window.__yesca;
+  for (const [x, y0] of [[500, 400], [560, 420], [620, 380], [540, 460]]) {
+    const p = y.stage.pick(x, y0);
+    if (p) y.ignite(p.u, p.v);
+  }
+});
+const chipThere = await page.waitForSelector(".sharechip", { timeout: 40000 }).then(() => true).catch(() => false);
+if (!chipThere) {
+  check("share chip stays mounted under the open sheet", false, "chip never mounted");
+} else {
+  await page.click(".sharechip");
+  await page.waitForSelector(".sheet");
+  const chipDuring = await page.evaluate(() => !!document.querySelector(".sharechip"));
+  check("share chip stays mounted under the open sheet", chipDuring);
+}
 
 await b.close();
 console.log(results.join("\n"));

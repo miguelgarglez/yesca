@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { cancelExit } from "../lib/exit";
 import { GAZETTEER } from "../lib/gazetteer";
 import type { Place } from "../lib/domain";
 
@@ -30,6 +31,8 @@ export function PlaceTray({ open, onClose, onPick, place, onGuide }: Props) {
   const [linger, setLinger] = useState(open);
   useEffect(() => {
     if (open) {
+      // a reopen inside the linger window reuses the node — kill the clip
+      cancelExit(rootRef.current);
       setLinger(true);
       return;
     }

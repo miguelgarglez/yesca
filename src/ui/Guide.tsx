@@ -1,5 +1,6 @@
-import { useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { TextMorph } from "torph/react";
+import { cancelExit } from "../lib/exit";
 
 export type GuideStep = "orbit" | "strike" | "break" | "done";
 
@@ -35,11 +36,17 @@ interface Props {
  *  TextMorph can't wrap, so the phone reads a plain twin of the same words */
 export function Guide({ step, closing, onSkip, buzzOn, onBuzz }: Props) {
   const last = useRef<Exclude<GuideStep, "done">>("orbit");
+  const ref = useRef<HTMLDivElement>(null);
+  // a tour replayed inside the exit window reuses this node — the finished
+  // forwards clip would pin it invisible unless it's cancelled here
+  useLayoutEffect(() => {
+    if (!closing) cancelExit(ref.current);
+  }, [closing]);
   if (step !== "done") last.current = step;
   if (step === "done" && !closing) return null;
   const c = COPY[step === "done" ? last.current : step];
   return (
-    <div className={`guide${closing ? " out" : ""}`} role="status" aria-live="polite">
+    <div ref={ref} className={`guide${closing ? " out" : ""}`} role="status" aria-live="polite">
       <div className="g-top">
         <span className="g-k">{c.k}</span>
         <span className="g-line">

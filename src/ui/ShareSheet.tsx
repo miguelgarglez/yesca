@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { TextMorph } from "torph/react";
+import { cancelExit } from "../lib/exit";
 import { compass, type Place, type Weather } from "../lib/domain";
 
 interface Props {
@@ -23,6 +24,7 @@ const H = 720;
 export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, anchor, onSend }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const backRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState<"idle" | "ok" | "err">("idle");
   const [img, setImg] = useState<string | null>(null);
   // latest props for the one-shot capture; the effect must not re-run on every tick
@@ -33,6 +35,10 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
   const [linger, setLinger] = useState(open);
   useEffect(() => {
     if (open) {
+      // a reopen inside the linger window reuses the node — kill the exit
+      // clip or it would hold the card invisible under the fresh open
+      cancelExit(backRef.current);
+      cancelExit(sheetRef.current);
       setLinger(true);
       return;
     }
@@ -174,7 +180,7 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
       }
     : undefined;
   return (
-    <div className={`sheet-back${open ? "" : " out"}`} onClick={onClose} aria-hidden={!open}>
+    <div ref={backRef} className={`sheet-back${open ? "" : " out"}`} onClick={onClose} aria-hidden={!open}>
       <div
         ref={sheetRef}
         className="sheet"
