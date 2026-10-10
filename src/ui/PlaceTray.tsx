@@ -26,6 +26,17 @@ export function PlaceTray({ open, onClose, onPick, place, onGuide }: Props) {
   const seq = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  // linger ~240ms on close so the tray slides back instead of vanishing
+  const [linger, setLinger] = useState(open);
+  useEffect(() => {
+    if (open) {
+      setLinger(true);
+      return;
+    }
+    const t = setTimeout(() => setLinger(false), 240);
+    return () => clearTimeout(t);
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -42,6 +53,7 @@ export function PlaceTray({ open, onClose, onPick, place, onGuide }: Props) {
     return () => {
       removeEventListener("keydown", onKey);
       removeEventListener("pointerdown", onDown);
+      (document.querySelector(".place-btn") as HTMLElement | null)?.focus();
     };
   }, [open, onClose]);
 
@@ -84,9 +96,16 @@ export function PlaceTray({ open, onClose, onPick, place, onGuide }: Props) {
     return () => clearTimeout(t);
   }, [q]);
 
-  if (!open) return null;
+  // linger only holds the node for the exit — an open tray renders now
+  if (!open && !linger) return null;
   return (
-    <div className="placetray" ref={rootRef} role="dialog" aria-label="choose a place">
+    <div
+      className={`placetray${open ? "" : " out"}`}
+      ref={rootRef}
+      role="dialog"
+      aria-label="choose a place"
+      aria-hidden={!open}
+    >
       <div className="pt-head">
         <input
           ref={inputRef}
@@ -105,6 +124,9 @@ export function PlaceTray({ open, onClose, onPick, place, onGuide }: Props) {
       {searching && <div className="pt-note">listening for a name…</div>}
       {failed && !searching && (
         <div className="pt-note">search is quiet — pick from the list</div>
+      )}
+      {!searching && !failed && q.trim().length >= 3 && results.length === 0 && (
+        <div className="pt-note">no hillside by that name — the shelf is below</div>
       )}
       {results.length > 0 && (
         <div className="pt-list">

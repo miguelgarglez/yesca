@@ -12,7 +12,10 @@ export interface Hotspot {
 interface HotspotResult {
   points: Hotspot[];
   dates: string[];
+  /** at least one tile was fetched AND decoded — the sky actually answered */
   live: boolean;
+  /** some tiles decoded but others failed — coverage is real but incomplete */
+  partial: boolean;
 }
 
 const Z = 7; // the GIBS "500m" epsg4326 matrix tops out at 7: 160x80 tiles
@@ -71,7 +74,8 @@ export async function fetchHotspots(place: Place): Promise<HotspotResult> {
   ];
   const seen = new Set<string>();
   const points: Hotspot[] = [];
-  let live = false;
+  let decoded = 0;
+  let missed = 0;
 
   const urls: { url: string; date: string }[] = [];
   for (const date of dates)
@@ -87,9 +91,9 @@ export async function fetchHotspots(place: Place): Promise<HotspotResult> {
       try {
         const res = await fetch(job.url);
         if (!res.ok) continue; // 404 = no detections in tile
-        live = true;
         const buf = await res.arrayBuffer();
         const tile = new VectorTile(new PbfReader(buf));
+        decoded++; // http-ok is not enough — only a decoded pass proves coverage
         for (const lname of Object.keys(tile.layers)) {
           const layerData = tile.layers[lname]!;
           for (let i = 0; i < layerData.length; i++) {
@@ -112,12 +116,12 @@ export async function fetchHotspots(place: Place): Promise<HotspotResult> {
           }
         }
       } catch {
-        /* a dead tile is just a quiet patch of sky */
+        missed++; /* a dead tile is just a quiet patch of sky */
       }
     }
   });
   await Promise.allSettled(workers);
-  return { points, dates, live };
+  return { points, dates, live: decoded > 0, partial: decoded > 0 && missed > 0 };
 }
 
 function mercY(lat: number): number {

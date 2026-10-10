@@ -22,14 +22,40 @@ const H = 720;
 /** a scorched polaroid: real relief + scar, the card singed by the burn itself */
 export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, anchor, onSend }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState<"idle" | "ok" | "err">("idle");
   const [img, setImg] = useState<string | null>(null);
   // latest props for the one-shot capture; the effect must not re-run on every tick
-  const latest = useRef({ onClose, place, weather, burntKm2, capture });
-  latest.current = { onClose, place, weather, burntKm2, capture };
+  const latest = useRef({ onClose, place, weather, burntKm2, capture, onSend });
+  latest.current = { onClose, place, weather, burntKm2, capture, onSend };
+
+  // linger ~240ms on close so the sheet settles back instead of vanishing
+  const [linger, setLinger] = useState(open);
+  useEffect(() => {
+    if (open) {
+      setLinger(true);
+      return;
+    }
+    const t = setTimeout(() => setLinger(false), 240);
+    return () => clearTimeout(t);
+  }, [open]);
+
+  const tryCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(location.href);
+      setCopied("ok");
+      latest.current.onSend?.();
+      setTimeout(() => setCopied("idle"), 1600);
+    } catch {
+      setCopied("err");
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
+    // a reopened sheet starts honest — last visit's failure must not linger
+    setCopied("idle");
+    const prev = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && latest.current.onClose();
     addEventListener("keydown", onKey);
     const ctx = ref.current?.getContext("2d");
@@ -91,10 +117,16 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
     ctx.fillText("a model, not a forecast", W - 56, H - 50);
     ctx.textAlign = "left";
     setImg(ref.current.toDataURL("image/png"));
-    return () => removeEventListener("keydown", onKey);
+    // keyboard visitors land on the first action, and focus goes home on close
+    sheetRef.current?.querySelector<HTMLElement>(".sheet-actions button")?.focus();
+    return () => {
+      removeEventListener("keydown", onKey);
+      (document.querySelector(".sharechip") as HTMLElement | null)?.focus() ?? prev?.focus();
+    };
   }, [open]);
 
-  if (!open) return null;
+  // linger only holds the node for the exit — an open sheet renders now
+  if (!open && !linger) return null;
   const anchored = anchor
     ? {
         // grow from the chip everywhere — on narrow screens clamp inside the viewport
@@ -103,8 +135,9 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
       }
     : undefined;
   return (
-    <div className="sheet-back" onClick={onClose}>
+    <div className={`sheet-back${open ? "" : " out"}`} onClick={onClose} aria-hidden={!open}>
       <div
+        ref={sheetRef}
         className="sheet"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -117,27 +150,20 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
           <div className="sheet-actions">
             {copied === "err" ? (
               // clipboard said no — hand the word over instead of claiming it went
-              <input
-                className="sheet-url"
-                readOnly
-                value={location.href}
-                autoFocus
-                onFocus={(e) => e.currentTarget.select()}
-                aria-label="copy this link by hand"
-              />
+              <>
+                <input
+                  className="sheet-url"
+                  readOnly
+                  value={location.href}
+                  onFocus={(e) => e.currentTarget.select()}
+                  aria-label="copy this link by hand"
+                />
+                <button className="sheet-retry" onClick={tryCopy}>
+                  try again
+                </button>
+              </>
             ) : (
-              <button
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(location.href);
-                    setCopied("ok");
-                    onSend?.();
-                    setTimeout(() => setCopied("idle"), 1600);
-                  } catch {
-                    setCopied("err");
-                  }
-                }}
-              >
+              <button onClick={tryCopy}>
                 <TextMorph>{copied === "ok" ? "word sent" : "send word"}</TextMorph>
               </button>
             )}

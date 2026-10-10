@@ -300,11 +300,18 @@ export class Stage {
     this.focusT = 1;
   }
 
+  /** kill in-flight decorative motion — reduced-motion toggled at runtime */
+  settle() {
+    this.focusT = 0;
+    this.vTheta = 0;
+    this.vPhi = 0;
+  }
+
   /** a keyboard orbit — the tour's first lesson must be finishable without a pointer */
   nudgeOrbit() {
-    this.vTheta = -0.09;
-    this.theta += this.vTheta;
-    this.orbitAccum += Math.abs(this.vTheta);
+    this.theta -= 0.09;
+    this.orbitAccum += 0.09;
+    this.vTheta = -0.6;
     this.lastInput = performance.now();
   }
 
@@ -327,11 +334,14 @@ export class Stage {
       const dy = e.clientY - this.lastY;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
-      this.vTheta = -dx * 0.0042;
-      this.vPhi = -dy * 0.0032;
-      this.theta += this.vTheta;
-      this.phi = THREE.MathUtils.clamp(this.phi + this.vPhi, 0.28, 1.45);
-      this.orbitAccum += Math.abs(this.vTheta) + Math.abs(this.vPhi);
+      // displacement is applied now; velocity (rad/s, ~60hz events) drives inertia
+      const dTheta = -dx * 0.0042;
+      const dPhi = -dy * 0.0032;
+      this.theta += dTheta;
+      this.phi = THREE.MathUtils.clamp(this.phi + dPhi, 0.28, 1.45);
+      this.vTheta = dTheta * 60;
+      this.vPhi = dPhi * 60;
+      this.orbitAccum += Math.abs(dTheta) + Math.abs(dPhi);
     });
     const up = (e: PointerEvent) => {
       this.dragging = false;
@@ -391,10 +401,12 @@ export class Stage {
   }
 
   update(dt: number, sim: Sim, time: number) {
-    // inertial orbit
+    // inertial orbit — velocity integrated over time, so a flick travels the
+    // same distance at any frame rate
     if (!this.dragging) {
-      this.theta += this.vTheta;
-      this.phi = THREE.MathUtils.clamp(this.phi + this.vPhi, 0.28, 1.45);
+      this.theta += this.vTheta * dt;
+      this.phi = THREE.MathUtils.clamp(this.phi + this.vPhi * dt, 0.28, 1.45);
+      this.orbitAccum += (Math.abs(this.vTheta) + Math.abs(this.vPhi)) * dt;
       this.vTheta *= Math.pow(0.06, dt);
       this.vPhi *= Math.pow(0.06, dt);
     }

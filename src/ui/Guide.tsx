@@ -3,18 +3,21 @@ import { TextMorph } from "torph/react";
 
 export type GuideStep = "orbit" | "strike" | "break" | "done";
 
-const COPY: Record<Exclude<GuideStep, "done">, { k: string; line: string }> = {
+const COPY: Record<Exclude<GuideStep, "done">, { k: string; line: string; keys: string }> = {
   orbit: {
     k: "step 1 of 3",
     line: "Drag the dark — the land tilts.",
+    keys: "enter tilts",
   },
   strike: {
     k: "step 2 of 3",
     line: "Press the land, drag — a match.",
+    keys: "space strikes",
   },
   break: {
     k: "step 3 of 3",
     line: "Cut a line it cannot cross.",
+    keys: "space cuts",
   },
 };
 
@@ -22,11 +25,13 @@ interface Props {
   step: GuideStep;
   closing?: boolean;
   onSkip: () => void;
+  buzzOn?: boolean;
+  onBuzz?: () => void;
 }
 
 /** the guide is engraved on the instrument itself: a strip fused to the tool dock,
  *  teaching by waiting for the real gesture — never a floating card */
-export function Guide({ step, closing, onSkip }: Props) {
+export function Guide({ step, closing, onSkip, buzzOn, onBuzz }: Props) {
   const last = useRef<Exclude<GuideStep, "done">>("orbit");
   if (step !== "done") last.current = step;
   if (step === "done" && !closing) return null;
@@ -37,6 +42,17 @@ export function Guide({ step, closing, onSkip }: Props) {
       <span className="g-line">
         <TextMorph>{c.line}</TextMorph>
       </span>
+      <span className="g-keys">{c.keys}</span>
+      {onBuzz && (
+        <button
+          className="g-buzz"
+          onClick={onBuzz}
+          aria-pressed={buzzOn}
+          title="haptic nudges — off if you prefer the land silent in your hand"
+        >
+          nudge {buzzOn ? "on" : "off"}
+        </button>
+      )}
       <span className="g-dots" aria-hidden>
         {(["orbit", "strike", "break"] as const).map((s) => (
           <i key={s} className={s === step || step === "done" ? "on" : ""} />

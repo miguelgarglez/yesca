@@ -74,8 +74,9 @@ export default function App() {
   const [weather, setWeather] = useState<Weather | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);
-  const [tool, setTool] = useState<Tool>("match");
-  const toolRef = useRef<Tool>("match");
+  // orbit is the neutral tool — and it must agree with the tour's first lesson
+  const [tool, setTool] = useState<Tool>("orbit");
+  const toolRef = useRef<Tool>("orbit");
   toolRef.current = tool;
   const [toolFlash, setToolFlash] = useState<{ n: number; x: number } | null>(null);
   const flashTool = (x = innerWidth / 2) => setToolFlash({ n: Date.now(), x });
@@ -116,7 +117,14 @@ export default function App() {
   useEffect(() => {
     // the preference can change under us — listen, don't sample once
     const mq = matchMedia("(prefers-reduced-motion: reduce)");
-    const fn = () => { reduced.current = mq.matches; };
+    const fn = () => {
+      reduced.current = mq.matches;
+      const r = readyRef.current;
+      if (r) {
+        r.stage.idleDrift = !mq.matches;
+        if (mq.matches) r.stage.settle();
+      }
+    };
     mq.addEventListener("change", fn);
     return () => mq.removeEventListener("change", fn);
   }, []);
@@ -322,6 +330,19 @@ export default function App() {
     return () => clearTimeout(t);
   }, [guideStep]);
 
+  // the tour owns one effective tool — ring, cursor, behavior and flash agree.
+  // picking another tool mid-lesson re-points at the lesson's tool instead.
+  const pickTool = (t: Tool) => {
+    const g = guideStepRef.current;
+    const lesson: Tool | null =
+      g === "orbit" ? "orbit" : g === "strike" ? "match" : g === "break" ? "break" : null;
+    const eff = lesson ?? t;
+    setTool(eff);
+    nudge();
+    const b = document.querySelector(`.tbtn[data-tool="${eff}"]`)?.getBoundingClientRect();
+    flashTool(b ? b.left + b.width / 2 : innerWidth / 2);
+  };
+
   // replay must re-teach — stale gesture flags would auto-advance the poll
   const restartGuide = () => {
     const r = readyRef.current;
@@ -478,17 +499,24 @@ export default function App() {
       stroke = [];
       e.stopImmediatePropagation();
     };
+    // an interrupted touch abandons the paint — it does not ignite the land
+    const cancelEvt = (e: PointerEvent) => {
+      pressPt = null;
+      active = false;
+      stroke = [];
+      e.stopImmediatePropagation();
+    };
     canvas.addEventListener("pointerdown", down, true);
     canvas.addEventListener("pointermove", move, true);
     canvas.addEventListener("pointerup", upEvt, true);
-    canvas.addEventListener("pointercancel", upEvt, true);
+    canvas.addEventListener("pointercancel", cancelEvt, true);
     const leave = () => setHoverTag(null);
     canvas.addEventListener("pointerleave", leave);
     return () => {
       canvas.removeEventListener("pointerdown", down, true);
       canvas.removeEventListener("pointermove", move, true);
       canvas.removeEventListener("pointerup", upEvt, true);
-      canvas.removeEventListener("pointercancel", upEvt, true);
+      canvas.removeEventListener("pointercancel", cancelEvt, true);
       canvas.removeEventListener("pointerleave", leave);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -511,11 +539,12 @@ export default function App() {
         }
         if (t !== "orbit") {
           e.preventDefault();
-          const c = { u: 0.5, v: 0.5 }; // the heart of the frame
+          // one raycast — the stamp and the flare acknowledge the same point
+          const rect = r.stage.renderer.domElement.getBoundingClientRect();
+          const hit = r.stage.pick(rect.width / 2, rect.height / 2);
+          const c = hit ? { u: hit.u, v: hit.v } : { u: 0.5, v: 0.5 };
           if (t === "match") {
             r.sim.stamp(0, [c], 11);
-            const rect = r.stage.renderer.domElement.getBoundingClientRect();
-            const hit = r.stage.pick(rect.width / 2, rect.height / 2);
             if (hit) {
               r.fx.flareAt(hit.point);
               if (!reduced.current) r.stage.nudgeFocus(hit.point);
@@ -526,22 +555,22 @@ export default function App() {
           } else if (t === "break") {
             r.sim.stamp(1, [c], 14);
             brokeOnce.current = true; // the keyboard finishes step 3 too
-          } else r.sim.stamp(2, [c], 70);
+            nudge();
+          } else {
+            r.sim.stamp(2, [c], 70);
+            nudge();
+          }
           setTool("orbit");
           const ob = document.querySelector('.tbtn[data-tool="orbit"]')?.getBoundingClientRect();
           flashTool(ob ? ob.left + ob.width / 2 : innerWidth / 2);
           return;
         }
       }
+      if (e.key === "Tab") document.body.classList.add("kb");
       if (sheetsOpen) return;
       const map: Record<string, Tool> = { "1": "orbit", "2": "match", "3": "break", "4": "rain", o: "orbit", m: "match", b: "break", r: "rain" };
       const t = map[e.key];
-      if (t) {
-        setTool(t);
-        nudge();
-        const b = document.querySelector(`.tbtn[data-tool="${t}"]`)?.getBoundingClientRect();
-        flashTool(b ? b.left + b.width / 2 : innerWidth / 2);
-      }
+      if (t) pickTool(t);
       if (e.key === "?") restartGuide();
     };
     addEventListener("keydown", onKey);
@@ -557,11 +586,13 @@ export default function App() {
     nudge();
     if (next) {
       // the satellites answer out loud — the one fact no demo can fake
-      const call = (n: number) => {
+      const call = (n: number, partial = false) => {
         setNotice(
           n > 0
             ? `${n} real fire${n === 1 ? "" : "s"} detected near here — the last 4 days`
-            : "the satellites saw nothing burning near here — the last 4 days",
+            : partial
+              ? "a quiet sky near here — some satellite passes are still missing"
+              : "the satellites saw nothing burning near here — the last 4 days",
         );
         setTimeout(() => setNotice(null), 5200);
       };
@@ -581,7 +612,7 @@ export default function App() {
             burnsCache.current.set(pk, h.points);
             setHotspots(h.points);
             r.stage.setHotspots(h.points);
-            call(h.points.length);
+            call(h.points.length, h.partial);
           })
           .catch(() => {
             setNotice("the satellites aren't answering — try again later");
@@ -619,7 +650,7 @@ export default function App() {
       <canvas
         ref={canvasRef}
         className="stage"
-        data-tool={guideStep === "orbit" ? "orbit" : tool}
+        data-tool={tool}
         role="application"
         aria-label="Wildfire field — drag to paint, use 1–4 to pick a tool, Enter paints at the center of view"
         tabIndex={0}
@@ -643,7 +674,7 @@ export default function App() {
             >
               <TextMorph>{place.name ?? "somewhere real"}</TextMorph>
               <small>
-                tonight's wind, live
+                tonight's wind, {weather.live ? "live" : "estimated"}
                 <span className="caret"> ▾</span>
               </small>
             </button>
@@ -744,14 +775,9 @@ export default function App() {
               <button
                 key={t}
                 data-tool={t}
-                className={`tbtn ${(guideStep === "orbit" ? t === "orbit" : tool === t) ? "on" : ""}`}
-                onClick={(e) => {
-                  setTool(t);
-                  const b = e.currentTarget.getBoundingClientRect();
-                  flashTool(b.left + b.width / 2);
-                  nudge();
-                }}
-                aria-pressed={guideStep === "orbit" ? t === "orbit" : tool === t}
+                className={`tbtn ${tool === t ? "on" : ""}`}
+                onClick={() => pickTool(t)}
+                aria-pressed={tool === t}
                 title={`${TOOL_LABEL[t]} (${t === "orbit" ? "1" : t === "match" ? "2" : t === "break" ? "3" : "4"})`}
               >
                 {TOOL_ICON[t]}
@@ -790,6 +816,8 @@ export default function App() {
               step={guideStep}
               closing={guideStep === "done"}
               onSkip={finishGuide}
+              buzzOn={buzzOn}
+              onBuzz={() => setBuzzOn((b) => !b)}
             />
           )}
 

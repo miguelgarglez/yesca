@@ -143,13 +143,14 @@ body.revealed .tray { animation: hud-in-c 700ms var(--ease-out) 300ms backwards;
 .inst .v {
   font-size: 17px; font-weight: 400; color: var(--bone);
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7), 0 2px 16px rgba(0,0,0,0.85);
 }
 .inst .k {
   font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
-  opacity: 0.68; margin-bottom: 4px;
-  text-shadow: 0 1px 10px rgba(0,0,0,0.75);
+  opacity: 0.78; margin-bottom: 4px;
+  text-shadow: 0 1px 10px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.8);
 }
-.inst .v small { font-size: 11px; opacity: 0.6; }
+.inst .v small { font-size: 11px; opacity: 0.65; }
 .inst.burnt .v { color: var(--ember); }
 
 /* the contextual share chip — it only surfaces once there is a scar to press */
@@ -274,6 +275,7 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
   white-space: nowrap;
 }
 .tbtn {
+  position: relative;
   width: 40px; height: 40px; border-radius: 50%;
   display: grid; place-items: center;
   color: var(--bone); background: transparent;
@@ -285,10 +287,16 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
 .tbtn svg { width: 17px; height: 17px; }
 .tbtn:hover { opacity: 1; background: rgba(233,225,206,0.07); }
 .tbtn:active { transform: scale(0.92); }
+/* the lit tool carries an ember pip engraved below its glyph, not a ring */
 .tbtn.on {
   opacity: 1; color: var(--hot);
-  background: rgba(255, 90, 31, 0.14);
-  border-color: rgba(255, 90, 31, 0.45);
+  background: rgba(255, 90, 31, 0.1);
+}
+.tbtn.on::after {
+  content: ""; position: absolute; bottom: 3px; left: 50%;
+  width: 3px; height: 3px; border-radius: 50%;
+  background: var(--ember); box-shadow: 0 0 6px rgba(255,90,31,0.9);
+  transform: translateX(-50%);
 }
 .tbtn:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
 /* tool switch answer: a name the dock says once, then drops */
@@ -344,7 +352,30 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
   text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 2px 22px rgba(0,0,0,0.95);
   flex: 1 1 auto; min-width: 0;
 }
-.g-k, .g-dots, .g-skip { flex: none; }
+.g-k, .g-dots, .g-skip, .g-keys, .g-buzz { flex: none; }
+/* the pointer copy can't teach keys — this line exists only for tab users */
+.g-keys {
+  display: none;
+  font-family: "IBM Plex Mono", monospace; font-size: 9px;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--bone); opacity: 0.55; align-self: center;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.9);
+}
+body.kb .g-keys { display: inline; }
+/* haptic refusal belongs inside the lesson, before the first strike */
+.g-buzz {
+  background: none; border: none; cursor: pointer;
+  font-family: "IBM Plex Mono", monospace; font-size: 9px;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--bone); opacity: 0.55; padding: 2px 4px;
+  align-self: center;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.9);
+  transition: opacity 160ms var(--ease-out), color 160ms var(--ease-out);
+}
+.g-buzz[aria-pressed="true"] { color: var(--ember); opacity: 0.85; }
+.g-buzz:hover { opacity: 1; }
+.g-buzz:active { color: var(--hot); }
+.g-buzz:focus-visible { outline: 1px solid var(--amber); outline-offset: 3px; }
 .g-dots { display: inline-flex; gap: 5px; align-self: center; }
 .g-dots i {
   width: 4px; height: 4px; border-radius: 50%;
@@ -422,13 +453,18 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
   from { opacity: 0; transform: scale(0.96) translateY(-6px); }
   to { opacity: 1; transform: none; }
 }
+.placetray { transition: opacity 240ms var(--ease-out), transform 240ms var(--ease-out); }
+.placetray.out {
+  opacity: 0; transform: scale(0.97) translateY(-4px);
+  pointer-events: none;
+}
 .pt-head { padding: 10px 12px 8px; border-bottom: 1px solid rgba(233,225,206,0.08); }
 .pt-head input {
   width: 100%; background: none; border: none; outline: none;
   font-family: "Spectral", serif; font-style: italic; font-size: 15px;
   color: var(--bone); caret-color: var(--ember);
 }
-.pt-head input::placeholder { color: rgba(233,225,206,0.3); }
+.pt-head input::placeholder { color: rgba(233,225,206,0.5); }
 .pt-note {
   font-family: "IBM Plex Mono", monospace; font-size: 9px;
   letter-spacing: 0.14em; text-transform: uppercase;
@@ -482,8 +518,8 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
 .pt-guide:hover { color: var(--hot); border-color: var(--hot); }
 .pt-guide:focus-visible { outline: 1px solid var(--amber); outline-offset: 3px; }
 .pt-cred {
-  font-family: "IBM Plex Mono", monospace; font-size: 9.5px;
-  letter-spacing: 0.06em; opacity: 0.38; line-height: 1.6;
+  font-family: "IBM Plex Mono", monospace; font-size: 10px;
+  letter-spacing: 0.06em; opacity: 0.55; line-height: 1.6;
 }
 
 /* ---------- share sheet ---------- */
@@ -493,8 +529,10 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
   background: rgba(13,12,10,0.6); backdrop-filter: blur(6px);
   display: grid; place-items: center;
   animation: fade-in 240ms var(--ease-out) both;
+  transition: opacity 240ms var(--ease-out);
 }
 @keyframes fade-in { from { opacity: 0; } }
+.sheet-back.out { opacity: 0; pointer-events: none; }
 .sheet {
   background: none;
   border: none;
@@ -516,13 +554,14 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
 }
 .sheet-row {
   display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 8px 14px;
   padding: 12px 6px 2px;
 }
 .sheet-cap {
   font-family: "Spectral", serif; font-style: italic; font-size: 14px;
   opacity: 0.7;
 }
-.sheet-actions { display: flex; gap: 14px; }
+.sheet-actions { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
 .sheet-actions button, .sheet-actions a {
   font-family: "IBM Plex Mono", monospace; font-size: 10px;
   letter-spacing: 0.14em; text-transform: uppercase;
@@ -538,7 +577,11 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
   font-family: "IBM Plex Mono", monospace; font-size: 11px;
   color: var(--bone); background: rgba(233,225,206,0.07);
   border: 1px solid rgba(233,225,206,0.25); border-radius: 6px;
-  padding: 6px 10px; width: 220px;
+  padding: 6px 10px; width: 220px; max-width: 100%;
+}
+/* the failure row is as composed as the ideal one */
+@media (max-width: 560px) {
+  .sheet-url { width: 100%; flex: 1 1 100%; }
 }
 /* every secondary press answers while held */
 .place-btn:active { transform: translateY(1px); }
@@ -567,10 +610,12 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
   .lever { min-height: 44px; }
   /* 44px targets for every secondary touch on the phone too */
   .g-skip { min-width: 44px; min-height: 44px; margin: -12px -4px -12px 0; }
+  .g-buzz { min-height: 44px; display: inline-flex; align-items: center; }
   .pt-guide { min-height: 44px; }
   .pt-list button { min-height: 44px; }
+  .place-btn { min-height: 44px; }
   .sheet-actions button, .sheet-actions a { min-height: 44px; display: inline-flex; align-items: center; }
-  .sharechip { left: 16px; bottom: 186px; }
+  .sharechip { left: 16px; bottom: 186px; min-height: 44px; display: inline-flex; align-items: center; }
   .tray { bottom: 14px; padding: 6px 10px 6px 12px; }
   .dock-brand span { display: none; }
   .tbtn { width: 44px; height: 44px; }
@@ -592,5 +637,7 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
   }
   /* a 1ms run races to the last frame — these should be still, not invisible */
   .toolflash, .loading .bar i { animation: none; }
+  /* decorative exits don't slide under reduce — they settle instantly */
+  .guide.out, .placetray.out, .sheet-back.out { transition-duration: 0.001ms; }
   .vane .needle { transition-duration: 200ms; }
 }
