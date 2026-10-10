@@ -3,6 +3,7 @@ import { chromium } from "playwright";
 const url = process.argv[2] ?? "http://127.0.0.1:4766/";
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1024, height: 600 } });
+await page.addInitScript(() => localStorage.setItem("yesca.guide.v1", "1"));
 await page.goto(url);
 await page.waitForSelector(".instruments", { timeout: 40000 });
 await page.waitForTimeout(1500);

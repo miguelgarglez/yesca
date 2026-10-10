@@ -11,7 +11,8 @@ page.on("console", (m) => {
 page.on("pageerror", (e) => errors.push(e.message));
 
 await page.goto(url);
-await page.waitForSelector(".instruments", { timeout: 30000 });
+// instruments are hidden while the tour teaches — wait for the node, not visibility
+await page.waitForSelector(".instruments", { state: "attached", timeout: 30000 });
 await page.waitForTimeout(3000);
 
 // step 1: orbit the terrain to advance the guide — repeat until the lesson moves on

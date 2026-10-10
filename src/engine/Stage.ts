@@ -300,6 +300,14 @@ export class Stage {
     this.focusT = 1;
   }
 
+  /** a keyboard orbit — the tour's first lesson must be finishable without a pointer */
+  nudgeOrbit() {
+    this.vTheta = -0.09;
+    this.theta += this.vTheta;
+    this.orbitAccum += Math.abs(this.vTheta);
+    this.lastInput = performance.now();
+  }
+
   private bindPointer() {
     const el = this.canvas;
     el.addEventListener("pointerdown", (e) => {

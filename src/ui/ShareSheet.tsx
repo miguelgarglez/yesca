@@ -12,15 +12,17 @@ interface Props {
   capture: () => HTMLCanvasElement;
   /** screen rect of the chip that opened us — the sheet grows from it */
   anchor: { x: number; y: number } | null;
+  /** shared feedback policy — fired only when the word actually leaves */
+  onSend?: () => void;
 }
 
 const W = 1280;
 const H = 720;
 
 /** a scorched polaroid: real relief + scar, the card singed by the burn itself */
-export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, anchor }: Props) {
+export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, anchor, onSend }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"idle" | "ok" | "err">("idle");
   const [img, setImg] = useState<string | null>(null);
   // latest props for the one-shot capture; the effect must not re-run on every tick
   const latest = useRef({ onClose, place, weather, burntKm2, capture });
@@ -113,15 +115,32 @@ export function ShareSheet({ open, onClose, place, weather, burntKm2, capture, a
         <div className="sheet-row">
           <span className="sheet-cap">the hillside, signed by the wind</span>
           <div className="sheet-actions">
-            <button
-              onClick={async () => {
-                await navigator.clipboard.writeText(location.href).catch(() => {});
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1600);
-              }}
-            >
-              <TextMorph>{copied ? "word sent" : "send word"}</TextMorph>
-            </button>
+            {copied === "err" ? (
+              // clipboard said no — hand the word over instead of claiming it went
+              <input
+                className="sheet-url"
+                readOnly
+                value={location.href}
+                autoFocus
+                onFocus={(e) => e.currentTarget.select()}
+                aria-label="copy this link by hand"
+              />
+            ) : (
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(location.href);
+                    setCopied("ok");
+                    onSend?.();
+                    setTimeout(() => setCopied("idle"), 1600);
+                  } catch {
+                    setCopied("err");
+                  }
+                }}
+              >
+                <TextMorph>{copied === "ok" ? "word sent" : "send word"}</TextMorph>
+              </button>
+            )}
             {img && (
               <a href={img} download={`yesca-${place.name?.replace(/\W+/g, "-").toLowerCase() ?? "hillside"}.png`}>
                 keep the burn

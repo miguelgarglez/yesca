@@ -7,6 +7,7 @@ const page = await browser.newPage({ viewport: { width: 1024, height: 600 } });
 const errors = [];
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 page.on("pageerror", (e) => errors.push(e.message));
+await page.addInitScript(() => localStorage.setItem("yesca.guide.v1", "1"));
 await page.goto(url);
 await page.waitForSelector(".instruments", { timeout: 40000 });
 await page.waitForTimeout(2000);

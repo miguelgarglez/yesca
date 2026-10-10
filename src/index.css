@@ -146,7 +146,8 @@ body.revealed .tray { animation: hud-in-c 700ms var(--ease-out) 300ms backwards;
 }
 .inst .k {
   font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
-  opacity: 0.5; margin-bottom: 4px;
+  opacity: 0.68; margin-bottom: 4px;
+  text-shadow: 0 1px 10px rgba(0,0,0,0.75);
 }
 .inst .v small { font-size: 11px; opacity: 0.6; }
 .inst.burnt .v { color: var(--ember); }
@@ -199,6 +200,8 @@ body.revealed .tray { animation: hud-in-c 700ms var(--ease-out) 300ms backwards;
 .rail.dim, .instruments.dim,
 body.revealed .rail.dim, body.revealed .instruments.dim {
   opacity: 0; pointer-events: none; animation: none;
+  /* hidden levers must not stay in the tab order */
+  visibility: hidden;
 }
 .lever {
   display: flex; align-items: center; gap: 9px;
@@ -358,6 +361,13 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
 }
 .g-skip:hover { opacity: 0.9; }
 .g-skip:focus-visible { outline: 1px solid var(--amber); outline-offset: 3px; }
+/* the lesson leaves the way it came — a fade, not a vanish */
+.guide.out {
+  opacity: 0; transform: translateX(-50%) translateY(8px);
+  transition: opacity 420ms var(--ease-out), transform 420ms var(--ease-out);
+  pointer-events: none;
+}
+.guide { transition: opacity 300ms var(--ease-out), transform 300ms var(--ease-out); }
 
 /* ---------- hover whisper ---------- */
 
@@ -432,7 +442,9 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
 }
 .pt-list button {
   display: flex; width: 100%; justify-content: space-between; align-items: baseline;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  color: var(--bone); /* buttons don't inherit — UA default is near-black on the dark tray */
   background: none; border: none; border-radius: 9px;
   padding: 7px 8px; cursor: pointer; text-align: left;
   transition: background 140ms var(--ease-out), transform 100ms var(--ease-out);
@@ -442,12 +454,13 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
 .pt-list button:focus-visible { outline: 1px solid var(--amber); outline-offset: -1px; }
 .pt-name {
   font-family: "Spectral", serif; font-style: italic; font-size: 14px;
-  color: var(--bone); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--bone); flex: 1 1 auto; min-width: 0;
 }
 .pt-hint {
   font-family: "IBM Plex Mono", monospace; font-size: 10px;
   letter-spacing: 0.1em; text-transform: uppercase;
-  opacity: 0.4; white-space: nowrap;
+  color: var(--bone); opacity: 0.55;
+  flex: none; margin-left: auto;
 }
 .pt-list::-webkit-scrollbar { width: 4px; }
 .pt-list::-webkit-scrollbar-thumb { background: rgba(233,225,206,0.15); border-radius: 2px; }
@@ -521,6 +534,19 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
 .sheet-actions button:focus-visible, .sheet-actions a:focus-visible {
   outline: 1px solid var(--amber); outline-offset: 3px;
 }
+.sheet-url {
+  font-family: "IBM Plex Mono", monospace; font-size: 11px;
+  color: var(--bone); background: rgba(233,225,206,0.07);
+  border: 1px solid rgba(233,225,206,0.25); border-radius: 6px;
+  padding: 6px 10px; width: 220px;
+}
+/* every secondary press answers while held */
+.place-btn:active { transform: translateY(1px); }
+.g-skip:active { opacity: 1; }
+.pt-guide:active { color: var(--hot); }
+.sharechip:active { transform: scale(0.97); }
+.sheet-actions button:active, .sheet-actions a:active { color: var(--hot); border-color: var(--hot); }
+.lever:active .lbl { color: var(--hot); }
 
 /* ---------- mobile ---------- */
 
@@ -531,13 +557,19 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
     left: 16px; bottom: 96px; gap: 12px;
   }
   .inst .v { font-size: 14px; }
-  .inst.burnt, .inst:nth-child(4) { display: none; }
+  /* air stays hidden; burnt returns once there is a scar to count */
+  .inst.burnt:not(.lit), .inst:nth-child(4) { display: none; }
   .vane { width: 36px; height: 36px; }
   .vane .needle { height: 14px; }
   .rail {
     left: 16px; right: auto; bottom: 148px; top: auto; gap: 14px;
   }
   .lever { min-height: 44px; }
+  /* 44px targets for every secondary touch on the phone too */
+  .g-skip { min-width: 44px; min-height: 44px; margin: -12px -4px -12px 0; }
+  .pt-guide { min-height: 44px; }
+  .pt-list button { min-height: 44px; }
+  .sheet-actions button, .sheet-actions a { min-height: 44px; display: inline-flex; align-items: center; }
   .sharechip { left: 16px; bottom: 186px; }
   .tray { bottom: 14px; padding: 6px 10px 6px 12px; }
   .dock-brand span { display: none; }
@@ -552,11 +584,13 @@ body.revealed .rail.dim, body.revealed .instruments.dim {
 /* ---------- reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .guide, .placetray, .sheet, .sheet-back, .offline, .hoverchip, .loading .bar i,
-  .sharechip, .masthead, .instruments, .rail, .tray, .toolflash,
+  .guide, .placetray, .sheet, .sheet-back, .offline, .hoverchip,
+  .sharechip, .masthead, .instruments, .rail, .tray,
   body.revealed .masthead, body.revealed .instruments,
   body.revealed .rail, body.revealed .tray {
     animation-duration: 1ms; animation-delay: 0ms;
   }
+  /* a 1ms run races to the last frame — these should be still, not invisible */
+  .toolflash, .loading .bar i { animation: none; }
   .vane .needle { transition-duration: 200ms; }
 }

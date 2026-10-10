@@ -107,9 +107,19 @@ export default function App() {
   const struckOnce = useRef(false);
   const brokeOnce = useRef(false);
   const reduced = useRef(prefersReducedMotion());
-  const canBuzz = useRef(typeof navigator !== "undefined" && "vibrate" in navigator);
   const buzzRef = useRef(true); // ref, not state — stable handlers close over it
-  const [buzzOn, setBuzzOn] = useState(true);
+  const [buzzOn, setBuzzOn] = useState(() => localStorage.getItem("yesca.buzz") !== "0");
+  useEffect(() => {
+    buzzRef.current = buzzOn;
+    localStorage.setItem("yesca.buzz", buzzOn ? "1" : "0");
+  }, [buzzOn]);
+  useEffect(() => {
+    // the preference can change under us — listen, don't sample once
+    const mq = matchMedia("(prefers-reduced-motion: reduce)");
+    const fn = () => { reduced.current = mq.matches; };
+    mq.addEventListener("change", fn);
+    return () => mq.removeEventListener("change", fn);
+  }, []);
   // haptics are motion too — the reduced-motion guard and the nudge lever both opt out
   const nudge = () => {
     if (reduced.current || !buzzRef.current) return;
@@ -301,6 +311,28 @@ export default function App() {
     localStorage.setItem(GUIDE_KEY, "1");
   };
 
+  // the lesson fades out instead of vanishing — keep it mounted through the fade
+  const [guideGone, setGuideGone] = useState(guideStep === "done");
+  useEffect(() => {
+    if (guideStep !== "done") {
+      setGuideGone(false);
+      return;
+    }
+    const t = setTimeout(() => setGuideGone(true), 500);
+    return () => clearTimeout(t);
+  }, [guideStep]);
+
+  // replay must re-teach — stale gesture flags would auto-advance the poll
+  const restartGuide = () => {
+    const r = readyRef.current;
+    if (r) r.stage.orbitAccum = 0;
+    struckOnce.current = false;
+    brokeOnce.current = false;
+    setTool("orbit");
+    setGuideStep("orbit");
+    localStorage.removeItem(GUIDE_KEY);
+  };
+
   // pointer tools on the canvas
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -427,7 +459,7 @@ export default function App() {
         const wp = stage.worldAt(last.u, last.v);
         fx.strike(stroke.slice(-48), sim.wind);
         fx.flareAt(wp);
-        stage.nudgeFocus(wp);
+        if (!reduced.current) stage.nudgeFocus(wp);
         crackleRef.current.strike();
         nudge();
         struckOnce.current = true;
@@ -471,7 +503,13 @@ export default function App() {
       if ((e.key === "Enter" || e.key === " ") && !sheetsOpen && onCanvas && readyRef.current) {
         const r = readyRef.current;
         const t = toolRef.current;
-        if (t !== "orbit" && guideStepRef.current !== "orbit") {
+        if (guideStepRef.current === "orbit") {
+          // the keyboard needs the same first lesson — Enter tilts the land a touch
+          e.preventDefault();
+          r.stage.nudgeOrbit();
+          return;
+        }
+        if (t !== "orbit") {
           e.preventDefault();
           const c = { u: 0.5, v: 0.5 }; // the heart of the frame
           if (t === "match") {
@@ -480,13 +518,15 @@ export default function App() {
             const hit = r.stage.pick(rect.width / 2, rect.height / 2);
             if (hit) {
               r.fx.flareAt(hit.point);
-              r.stage.nudgeFocus(hit.point);
+              if (!reduced.current) r.stage.nudgeFocus(hit.point);
             }
             crackleRef.current.strike();
             struckOnce.current = true;
             nudge();
-          } else if (t === "break") r.sim.stamp(1, [c], 14);
-          else r.sim.stamp(2, [c], 70);
+          } else if (t === "break") {
+            r.sim.stamp(1, [c], 14);
+            brokeOnce.current = true; // the keyboard finishes step 3 too
+          } else r.sim.stamp(2, [c], 70);
           setTool("orbit");
           const ob = document.querySelector('.tbtn[data-tool="orbit"]')?.getBoundingClientRect();
           flashTool(ob ? ob.left + ob.width / 2 : innerWidth / 2);
@@ -502,10 +542,7 @@ export default function App() {
         const b = document.querySelector(`.tbtn[data-tool="${t}"]`)?.getBoundingClientRect();
         flashTool(b ? b.left + b.width / 2 : innerWidth / 2);
       }
-      if (e.key === "?") {
-        setGuideStep("orbit");
-        localStorage.removeItem(GUIDE_KEY);
-      }
+      if (e.key === "?") restartGuide();
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
@@ -535,12 +572,21 @@ export default function App() {
         const pk = `${p.lat.toFixed(4)},${p.lon.toFixed(4)}`;
         fetchHotspots(p)
           .then((h) => {
+            if (!h.live) {
+              // every request failed — that's an outage, not an empty sky
+              setNotice("the satellites aren't answering — try again later");
+              setTimeout(() => setNotice(null), 5200);
+              return;
+            }
             burnsCache.current.set(pk, h.points);
             setHotspots(h.points);
             r.stage.setHotspots(h.points);
             call(h.points.length);
           })
-          .catch(() => setHotspots([]));
+          .catch(() => {
+            setNotice("the satellites aren't answering — try again later");
+            setTimeout(() => setNotice(null), 5200);
+          });
       }
     }
   };
@@ -634,7 +680,7 @@ export default function App() {
                 <small>°C</small>
               </div>
             </div>
-            <div className="inst burnt">
+            <div className={`inst burnt${burntKm2 > 0.0001 ? " lit" : ""}`}>
               <div className="k">burnt</div>
               <div className="v">
                 <NumberFlow value={burntKm2} format={{ maximumFractionDigits: 2 }} />
@@ -664,21 +710,15 @@ export default function App() {
               <span className="lbl">crackle</span>
               <i className="sw" />
             </button>
-            {canBuzz.current && (
-              <button
-                className={`lever ${buzzOn ? "on" : ""}`}
-                onClick={() => {
-                  buzzRef.current = !buzzRef.current;
-                  setBuzzOn(buzzRef.current);
-                  if (buzzRef.current && !reduced.current) haptics.current.trigger("nudge").catch(() => {});
-                }}
-                aria-pressed={buzzOn}
-                title="the land answers in your hand"
-              >
-                <span className="lbl">nudge</span>
-                <i className="sw" />
-              </button>
-            )}
+            <button
+              className={`lever ${buzzOn ? "on" : ""}`}
+              onClick={() => setBuzzOn((v) => !v)}
+              aria-pressed={buzzOn}
+              title="the land answers in your hand"
+            >
+              <span className="lbl">nudge</span>
+              <i className="sw" />
+            </button>
           </div>
 
           {burntKm2 > 0.004 && !shareOpen && guideStep === "done" && (
@@ -745,10 +785,13 @@ export default function App() {
             </div>
           )}
 
-          <Guide
-            step={guideStep}
-            onSkip={finishGuide}
-          />
+          {!guideGone && (
+            <Guide
+              step={guideStep}
+              closing={guideStep === "done"}
+              onSkip={finishGuide}
+            />
+          )}
 
           <PlaceTray
             open={placesOpen}
@@ -756,8 +799,7 @@ export default function App() {
             place={place}
             onGuide={() => {
               setPlacesOpen(false);
-              setGuideStep("orbit");
-              localStorage.removeItem(GUIDE_KEY);
+              restartGuide();
             }}
             onPick={(p) => {
               setPlacesOpen(false);
@@ -773,6 +815,7 @@ export default function App() {
             place={place}
             weather={weather}
             burntKm2={burntKm2}
+            onSend={nudge}
             capture={() => {
               const r = readyRef.current!;
               r.stage.renderer.render(r.stage.scene, r.stage.camera);

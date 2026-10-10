@@ -9,6 +9,8 @@ const errors = [];
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 page.on("pageerror", (e) => errors.push(e.message));
 
+// tour pre-completed: replay via ? still exercises the guide path
+await ctx.addInitScript(() => localStorage.setItem("yesca.guide.v1", "1"));
 await page.goto(url);
 await page.waitForSelector(".instruments", { timeout: 30000 });
 await page.waitForTimeout(2500);
@@ -61,7 +63,7 @@ await page.keyboard.press("?");
 await page.waitForTimeout(600);
 const g1 = await page.evaluate(() => document.querySelector(".g-line")?.textContent);
 await page.click(".g-skip");
-await page.waitForTimeout(400);
+await page.waitForTimeout(900); // guide lingers ~500ms for its exit fade
 const g2 = await page.evaluate(() => document.querySelector(".guide") ? "still there" : "gone");
 console.log("guide replay:", g1, "| after skip:", g2);
 
