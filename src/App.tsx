@@ -16,7 +16,7 @@ import { FALLBACK_WEATHER, fetchWeather } from "./lib/weather";
 import { nameFor } from "./lib/gazetteer";
 import { fetchHotspots, type Hotspot } from "./lib/firms";
 import { Crackle } from "./lib/crackle";
-import { cancelExit, playExit } from "./lib/exit";
+import { playExit, reenter } from "./lib/exit";
 import { prefersReducedMotion } from "./lib/reduced";
 import { Sim } from "./engine/Sim";
 import { Stage } from "./engine/Stage";
@@ -113,7 +113,8 @@ export default function App() {
   // wherever the entrance reached, and a second tap replaces it cleanly
   const whisperTag = (x: number, y: number, text: string, ms: number) => {
     const id = ++whisperSeq.current;
-    cancelExit(chipRef.current);
+    // a tag replacing one mid-exit rides the live value back, not from 0
+    reenter(chipRef.current, 160, "translateY(-100%)");
     setHoverTag({ x, y, text });
     setTimeout(() => {
       if (id !== whisperSeq.current) return;
@@ -139,7 +140,7 @@ export default function App() {
     noticeTimers.current.forEach(clearTimeout);
     noticeTimers.current = [
       setTimeout(() => {
-        playExit(noticeRef.current, 180, "translateX(-50%) translateY(-4px)");
+        playExit(noticeRef.current, 180, "translateX(-50%) translateY(8px)");
         setNoticeOut(true);
       }, ms),
       setTimeout(() => {
@@ -147,7 +148,7 @@ export default function App() {
         setNoticeOut(false);
       }, ms + 180),
     ];
-    cancelExit(noticeRef.current);
+    reenter(noticeRef.current, 180, "translateX(-50%)");
     setNoticeOut(false);
     setNotice(text);
   };
@@ -290,10 +291,15 @@ export default function App() {
     return () => clearTimeout(t);
   }, [offline]);
   useEffect(() => {
-    const off = () => setOffline(true);
+    const off = () => {
+      // dropped again while the last banner was still leaving — ride it back
+      reenter(document.querySelector(".conn"), 200, "translateX(-50%)");
+      setOffline(true);
+    };
     const on = () => {
-      // connectivity returning is still a leave — play the clip, not a cut
-      playExit(document.querySelector(".conn"), 180, "translateX(-50%) translateY(-4px)");
+      // connectivity returning is still a leave — play the clip, not a cut.
+      // it arrived rising from +8px, so it leaves the way it came
+      playExit(document.querySelector(".conn"), 180, "translateX(-50%) translateY(8px)");
       setOffline(false);
     };
     addEventListener("offline", off);
@@ -394,6 +400,7 @@ export default function App() {
 
   // the lesson fades out instead of vanishing — keep it mounted through the fade
   const [guideGone, setGuideGone] = useState(guideStep === "done");
+  const [guideReplayed, setGuideReplayed] = useState(false);
   useEffect(() => {
     if (guideStep !== "done") {
       setGuideGone(false);
@@ -424,6 +431,11 @@ export default function App() {
     struckOnce.current = false;
     brokeOnce.current = false;
     setTool("orbit");
+    // replaying inside the exit window rides the live value back up; the
+    // .replay class drops hud-in-c's first-appearance delay either way —
+    // a replay is on screen the frame it was asked for
+    reenter(document.querySelector(".guide"), 320, "translateX(-50%)");
+    setGuideReplayed(true);
     setGuideStep("orbit");
     localStorage.removeItem(GUIDE_KEY);
   };
@@ -503,7 +515,7 @@ export default function App() {
                   ? `burned ${Math.max(1, Math.round((sim.time - c[2]!) / 60))} min ago`
                   : "burning";
                 whisperSeq.current++; // a fresh whisper invalidates old timers
-                cancelExit(chipRef.current);
+                reenter(chipRef.current, 160, "translateY(-100%)");
                 setHoverTag({ x: e.clientX, y: e.clientY, text });
               } else if (h) fadeWhisper();
             }
@@ -803,9 +815,15 @@ export default function App() {
               onClick={() => {
                 // the toggle owns this close — outside-click skips .place-btn,
                 // so the clip has to be fired here or the tray just cuts out
-                if (placesOpen)
+                if (placesOpen) {
                   playExit(document.querySelector(".placetray"), 240, "scale(0.97) translateY(-4px)");
-                setPlacesOpen((o) => !o);
+                  setPlacesOpen(false);
+                } else {
+                  // reopened inside the exit window — ride the live value
+                  // back up, not a fresh tray-in from 0
+                  reenter(document.querySelector(".placetray"), 240);
+                  setPlacesOpen(true);
+                }
               }}
               aria-expanded={placesOpen}
               title="choose a hillside"
@@ -906,6 +924,10 @@ export default function App() {
               onClick={(e) => {
                 const r0 = e.currentTarget.getBoundingClientRect();
                 setShareAnchor({ x: r0.left, y: r0.top });
+                // reopened inside the exit window — scrim and card ride the
+                // live value back, not a fresh sheet-in from 0
+                reenter(document.querySelector(".sheet"), 220);
+                reenter(document.querySelector(".sheet-back"), 240);
                 setShareOpen(true);
                 nudge();
               }}
@@ -974,6 +996,7 @@ export default function App() {
             <Guide
               step={guideStep}
               closing={guideStep === "done"}
+              replay={guideReplayed}
               onSkip={finishGuide}
               buzzOn={buzzOn}
               onBuzz={() => setBuzzOn((b) => !b)}

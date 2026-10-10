@@ -25,6 +25,7 @@ const COPY: Record<Exclude<GuideStep, "done">, { k: string; line: string; keys: 
 interface Props {
   step: GuideStep;
   closing?: boolean;
+  replay?: boolean;
   onSkip: () => void;
   buzzOn?: boolean;
   onBuzz?: () => void;
@@ -34,7 +35,7 @@ interface Props {
  *  teaching by waiting for the real gesture — never a floating card.
  *  the sentence keeps its own row so the verb survives a 375px screen;
  *  TextMorph can't wrap, so the phone reads a plain twin of the same words */
-export function Guide({ step, closing, onSkip, buzzOn, onBuzz }: Props) {
+export function Guide({ step, closing, replay, onSkip, buzzOn, onBuzz }: Props) {
   const last = useRef<Exclude<GuideStep, "done">>("orbit");
   const ref = useRef<HTMLDivElement>(null);
   // a tour replayed inside the exit window reuses this node — the finished
@@ -46,7 +47,7 @@ export function Guide({ step, closing, onSkip, buzzOn, onBuzz }: Props) {
   if (step === "done" && !closing) return null;
   const c = COPY[step === "done" ? last.current : step];
   return (
-    <div ref={ref} className={`guide${closing ? " out" : ""}`} role="status" aria-live="polite">
+    <div ref={ref} className={`guide${closing ? " out" : ""}${replay ? " replay" : ""}`} role="status" aria-live="polite">
       <div className="g-top">
         <span className="g-k">{c.k}</span>
         <span className="g-line">
