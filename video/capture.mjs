@@ -1,11 +1,12 @@
 // Capture the six video beats as separate webm clips from the real product.
 // Usage: node video/capture.mjs <url>
 import { chromium } from "playwright";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 
 const url = process.argv[2] ?? "http://localhost:4421";
 const OUT = "video/footage";
 mkdirSync(OUT, { recursive: true });
+const offsets = {};
 
 async function clip(name, fn, { guide = false } = {}) {
   const ctx = await chromium.launch().then((b) =>
@@ -17,12 +18,15 @@ async function clip(name, fn, { guide = false } = {}) {
   );
   const page = await ctx.newPage();
   if (!guide) await page.addInitScript(() => localStorage.setItem("yesca.guide.v1", "1"));
+  const t0 = Date.now();
   await page.goto(url);
   await page.waitForFunction(() => window.__yesca, { timeout: 45000 });
+  offsets[name] = (Date.now() - t0) / 1000; // seconds of loading screen at clip head
   await fn(page);
   await ctx.close(); // closing flushes the webm
   await page.video().saveAs(`${OUT}/${name}.webm`); // finalizes after close
-  console.log("captured", name);
+  writeFileSync(`${OUT}/offsets.json`, JSON.stringify(offsets, null, 2));
+  console.log("captured", name, `load=${offsets[name].toFixed(1)}s`);
 }
 
 const drag = async (page, x0, y0, dx, dy, steps = 14, delay = 55) => {
