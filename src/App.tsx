@@ -344,15 +344,18 @@ export default function App() {
         setWeather(w);
       }
     }, 15 * 60 * 1000);
-    (window as unknown as { __yesca: unknown }).__yesca = {
-      ignite: (u: number, v: number) => r.sim.stamp(0, [{ u, v }], 10),
-      cell: (u: number, v: number) => r.sim.cell(u, v),
-      stats: () => r.sim.stats(),
-      stage: r.stage,
-      sim: r.sim,
-      fx: r.fx,
-      load: (lat: number, lon: number, name?: string) => loadPlace({ lat, lon, name }, false),
-    };
+    // test/debug hooks — dev builds and ?debug only, never shipped loose
+    if (import.meta.env.DEV || location.search.includes("debug")) {
+      (window as unknown as { __yesca: unknown }).__yesca = {
+        ignite: (u: number, v: number) => r.sim.stamp(0, [{ u, v }], 10),
+        cell: (u: number, v: number) => r.sim.cell(u, v),
+        stats: () => r.sim.stats(),
+        stage: r.stage,
+        sim: r.sim,
+        fx: r.fx,
+        load: (lat: number, lon: number, name?: string) => loadPlace({ lat, lon, name }, false),
+      };
+    }
     return () => {
       cancelAnimationFrame(raf);
       clearInterval(wxTimer);
