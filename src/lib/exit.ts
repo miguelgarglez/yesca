@@ -9,8 +9,9 @@
 // reenter is the same handoff in the other direction: reopening inside the
 // exit window captures the live opacity/transform and rides it back to the
 // rest pose, instead of dropping to 0 and replaying the CSS entrance. The
-// entrance still replays underneath, but the forwards-fill clip masks it —
-// both land on the same rest pose.
+// CSS entrance is pinned off inline for the node's life — a reborn keyframe
+// would be created after the WA clip and win the composite, painting the
+// mid-air surface as empty.
 const clips = new WeakMap<HTMLElement, { a: Animation; kind: "exit" | "enter" }>();
 const easeOut = "cubic-bezier(0.23, 1, 0.32, 1)"; // matches --ease-out
 const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -45,6 +46,13 @@ export function reenter(el: HTMLElement | null, ms: number, restTransform = "non
   const opacity = cs.opacity;
   const transform = cs.transform;
   prev.a.cancel();
+  // removing .out rebirths the CSS entrance from keyframe 0, and a CSS clip
+  // created after this WA clip wins the composite — the surface snaps to
+  // empty under the handoff. Pin animation:none at inline specificity for the
+  // rest of this node's life: the WA clip owns every re-show from now on, and
+  // a fresh mount carries no inline style, so a first open still gets the CSS
+  // entrance. Never clear it — clearing re-arms the keyframe from 0.
+  el.style.animation = "none";
   const a = el.animate(
     [
       { opacity, transform },

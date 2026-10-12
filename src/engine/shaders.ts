@@ -254,24 +254,37 @@ void main() {
   nb += step(1.5, texture(uState, fuv + vec2(0.0, uTexel.y * 2.5)).r);
   nb += step(1.5, texture(uState, fuv - vec2(0.0, uTexel.y * 2.5)).r);
   if (st.r > 1.5) {
-    // burnt: char that keeps the relief — a warm ash floor so shade never
-    // drops to a hole, and the ridges still catch the raking sun
+    // burnt: the scar keeps the same light — tint the shaded ground toward
+    // the ash palette instead of swapping in a new material, or the ridges
+    // die at the rim and the cooled interior reads as a black pool
     float mot = vnoise(vUv * 46.0 + vec2(hash(floor(vUv * 8.0)), hash(floor(vUv * 8.0) + 19.7)) * 9.0);
-    vec3 c = mix(uChar, uAsh, smoothstep(0.4, 0.8, mot) * 0.5);
-    vec3 burnCol = c * vec3(1.08, 0.95, 0.84) * (0.30 + 0.30 * sky + 1.0 * pow(dif, 1.2));
+    vec3 tone = mix(uChar, uAsh, smoothstep(0.4, 0.8, mot) * 0.55);
+    vec3 soot = mix(vec3(1.0), tone / mix(uLo, uHi, 0.55), 0.86);
     float mask = smoothstep(0.1, 0.9, (nb + 1.0) / 5.0);
-    col = mix(col, burnCol, mask);
+    col = mix(col, col * soot + tone * 0.05, mask);
     // fresh char radiates along the rim for a few sim-seconds
     float age = uTime - st.b;
     float ember = st.g * (0.55 + 0.45 * vnoise(vUv * 90.0 + vec2(uTime * 3.1, -uTime * 2.3)));
     col += uEmber * (ember * 0.6 + exp(-max(age, 0.0) * 0.7) * 0.55 * mask);
   } else if (st.r > 0.5) {
-    // burning: dim ember body, incandescent only where intensity peaks
-    float i = st.g * (0.7 + 0.6 * vnoise(vUv * 70.0 + uTime * 0.4));
+    // burning: the front is one ribbon — intensity is averaged over the
+    // neighbourhood so the raw cell lattice never reaches the color, and
+    // the lick rides the blurred field in broad tongues, not per-texel grain
+    float ib = st.g;
+    ib += texture(uState, fuv + vec2( uTexel.x * 1.8,  uTexel.y * 1.8)).g;
+    ib += texture(uState, fuv + vec2(-uTexel.x * 1.8,  uTexel.y * 1.8)).g;
+    ib += texture(uState, fuv + vec2( uTexel.x * 1.8, -uTexel.y * 1.8)).g;
+    ib += texture(uState, fuv + vec2(-uTexel.x * 1.8, -uTexel.y * 1.8)).g;
+    ib += texture(uState, fuv + vec2( uTexel.x * 3.0, 0.0)).g;
+    ib += texture(uState, fuv + vec2(-uTexel.x * 3.0, 0.0)).g;
+    ib += texture(uState, fuv + vec2(0.0,  uTexel.y * 3.0)).g;
+    ib += texture(uState, fuv + vec2(0.0, -uTexel.y * 3.0)).g;
+    ib /= 9.0;
+    float i = ib * (0.75 + 0.45 * vnoise(vUv * 46.0 + uTime * 0.4));
     vec3 c = mix(uChar * 0.55, uEmber, clamp(i * 1.05, 0.0, 1.0));
     c = mix(c, uHot, smoothstep(0.95, 1.3, i));
-    float lick = vnoise(vUv * 320.0 + vec2(0.0, -uTime * 3.4));
-    col = c * (0.3 + 0.75 * i) * (1.0 + 0.5 * lick * i);
+    float lick = vnoise(vUv * 90.0 + vec2(0.0, -uTime * 3.4));
+    col = c * (0.3 + 0.75 * i) * (1.0 + 0.35 * lick * i);
   }
   // soft halo around active fire — blur-sample the intensity field
   float halo = 0.0;

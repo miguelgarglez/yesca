@@ -237,9 +237,10 @@ export class FX {
       const s = this.stage.sceneMeters * 0.02 * (0.4 + this.flareT * 2.2);
       this.flare.scale.set(s, s, 1);
       // the light sinks onto the contact as it dies — it lands where the
-      // fire front is already running, not above it
+      // fire front is already running, not above it: the offset must reach
+      // zero as the opacity does, or the sprite vanishes mid-air
       this.flare.position.copy(this.flareBase);
-      this.flare.position.y += this.stage.sceneMeters * 0.012 * (1 - this.flareT * 0.75);
+      this.flare.position.y += this.stage.sceneMeters * 0.012 * (1 - this.flareT);
       // a hard white core for the first ~70ms, then the amber bloom
       this.flareMat.opacity = this.flareT < 0.13 ? 1.0 : (1 - this.flareT) * 0.9;
       if (this.flareT >= 1) this.flare.visible = false;
