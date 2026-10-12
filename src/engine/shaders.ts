@@ -248,25 +248,32 @@ void main() {
   col = ground;
 
   // burn states — feathered rim via neighbourhood taps, not a sawtooth edge
-  float nb = 0.0;
-  nb += step(1.5, texture(uState, fuv + vec2(uTexel.x * 2.5, 0.0)).r);
-  nb += step(1.5, texture(uState, fuv - vec2(uTexel.x * 2.5, 0.0)).r);
-  nb += step(1.5, texture(uState, fuv + vec2(0.0, uTexel.y * 2.5)).r);
-  nb += step(1.5, texture(uState, fuv - vec2(0.0, uTexel.y * 2.5)).r);
-  if (st.r > 1.5) {
+  float nbr = 0.0;
+  nbr += smoothstep(1.2, 1.8, texture(uState, fuv + vec2(uTexel.x * 2.5, 0.0)).r);
+  nbr += smoothstep(1.2, 1.8, texture(uState, fuv - vec2(uTexel.x * 2.5, 0.0)).r);
+  nbr += smoothstep(1.2, 1.8, texture(uState, fuv + vec2(0.0, uTexel.y * 2.5)).r);
+  nbr += smoothstep(1.2, 1.8, texture(uState, fuv - vec2(0.0, uTexel.y * 2.5)).r);
+  // continuous weights, not st.r > threshold branches — state ramps across the
+  // filtered boundary texels, so discrete branches paint contour bands and teeth
+  float burntW = smoothstep(1.35, 1.65, st.r);
+  float burnW = smoothstep(0.35, 0.65, st.r) * (1.0 - burntW);
+  if (burntW > 0.0) {
     // burnt: the scar keeps the same light — tint the shaded ground toward
     // the ash palette instead of swapping in a new material, or the ridges
     // die at the rim and the cooled interior reads as a black pool
-    float mot = vnoise(vUv * 46.0 + vec2(hash(floor(vUv * 8.0)), hash(floor(vUv * 8.0) + 19.7)) * 9.0);
-    vec3 tone = mix(uChar, uAsh, smoothstep(0.4, 0.8, mot) * 0.55);
+    vec2 warp = (vec2(vnoise(vUv * 2.9 + 17.0), vnoise(vUv * 2.9 + 41.7)) - 0.5) * 18.0;
+    float mot = vnoise(vUv * 46.0 + warp);
+    vec3 tone = mix(uChar, uAsh, smoothstep(0.35, 0.75, mot) * 0.38);
     vec3 soot = mix(vec3(1.0), tone / mix(uLo, uHi, 0.55), 0.86);
-    float mask = smoothstep(0.1, 0.9, (nb + 1.0) / 5.0);
-    col = mix(col, col * soot + tone * 0.05, mask);
+    float mask = smoothstep(0.1, 0.9, (nbr + 1.0) / 5.0);
+    vec3 burntCol = mix(col, col * soot + tone * 0.035, mask);
     // fresh char radiates along the rim for a few sim-seconds
     float age = uTime - st.b;
     float ember = st.g * (0.55 + 0.45 * vnoise(vUv * 90.0 + vec2(uTime * 3.1, -uTime * 2.3)));
-    col += uEmber * (ember * 0.6 + exp(-max(age, 0.0) * 0.7) * 0.55 * mask);
-  } else if (st.r > 0.5) {
+    burntCol += uEmber * (ember * 0.6 + exp(-max(age, 0.0) * 0.7) * 0.55 * mask);
+    col = mix(col, burntCol, burntW);
+  }
+  if (burnW > 0.0) {
     // burning: the front is one ribbon — intensity is averaged over the
     // neighbourhood so the raw cell lattice never reaches the color, and
     // the lick rides the blurred field in broad tongues, not per-texel grain
@@ -284,7 +291,7 @@ void main() {
     vec3 c = mix(uChar * 0.55, uEmber, clamp(i * 1.05, 0.0, 1.0));
     c = mix(c, uHot, smoothstep(0.95, 1.3, i));
     float lick = vnoise(vUv * 90.0 + vec2(0.0, -uTime * 3.4));
-    col = c * (0.3 + 0.75 * i) * (1.0 + 0.35 * lick * i);
+    col = mix(col, c * (0.3 + 0.75 * i) * (1.0 + 0.35 * lick * i), burnW);
   }
   // soft halo around active fire — blur-sample the intensity field
   float halo = 0.0;
